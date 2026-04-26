@@ -1,0 +1,30 @@
+[package]
+name = "project-map-cli-rust"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance architectural map generator for AI agents and developers."
+license = "MIT"
+repository = "https://github.com/benjamesmurray/project-map-cli-rust"
+readme = "README.md"
+keywords = ["cli", "mcp", "tree-sitter", "architecture", "agent"]
+categories = ["development-tools"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+petgraph = "0.6"
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-sequel = "0.3"
+tree-sitter-vue-updated = "0.1"
+streaming-iterator = "0.1"
+tokio = { version = "1.36", features = ["full"] }
+chrono = "0.4"
+walkdir = "2.5"
+ignore = "0.4"
