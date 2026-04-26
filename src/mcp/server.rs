@@ -20,7 +20,7 @@ pub struct McpServer {
 
 impl McpServer {
     pub fn new() -> Self {
-        let engine = QueryEngine::load(Path::new(".project-map.json")).ok();
+        let engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
         Self { engine }
     }
 
@@ -45,7 +45,7 @@ impl McpServer {
         Ok(())
     }
 
-    async fn handle_request(&self, req: JsonRpcRequest) -> Value {
+    async fn handle_request(&mut self, req: JsonRpcRequest) -> Value {
         match req.method.as_str() {
             "initialize" => json!({
                 "jsonrpc": "2.0",
@@ -105,6 +105,34 @@ impl McpServer {
                                 },
                                 "required": ["symbol"]
                             }
+                        },
+                        {
+                            "name": "pm_semantic_search",
+                            "description": "Search for logic using natural language keywords (e.g., 'auth', 'database').",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string" }
+                                },
+                                "required": ["query"]
+                            }
+                        },
+                        {
+                            "name": "pm_fetch_symbol",
+                            "description": "Extract raw source code for a specific class or function.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "path": { "type": "string" },
+                                    "symbol": { "type": "string" }
+                                },
+                                "required": ["path", "symbol"]
+                            }
+                        },
+                        {
+                            "name": "pm_init",
+                            "description": "Refresh the map index after significant code changes to maintain discovery accuracy.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         }
                     ]
                 }
@@ -118,7 +146,7 @@ impl McpServer {
         }
     }
 
-    async fn handle_tool_call(&self, req: JsonRpcRequest) -> Value {
+    async fn handle_tool_call(&mut self, req: JsonRpcRequest) -> Value {
         let params = req.params.as_ref().unwrap();
         let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
@@ -178,6 +206,51 @@ impl McpServer {
                         symbol, impact.len(), blast.len(), unique_blast.len())
                 } else {
                     "Error: Index not loaded".to_string()
+                }
+            }
+            "pm_semantic_search" => {
+                if let Some(ref engine) = self.engine {
+                    let query = tool_args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                    let matches = engine.find_symbols(query);
+                    let mut result = format!("Semantic Search Results ({}):", matches.len());
+                    for m in matches.iter().take(15) {
+                        result.push_str(&format!("\n- {}: {}", m.path, m.name));
+                    }
+                    result
+                } else {
+                    "Error: Index not loaded".to_string()
+                }
+            }
+            "pm_fetch_symbol" => {
+                if let Some(ref engine) = self.engine {
+                    let path = tool_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    let symbol = tool_args.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some(node) = engine.find_symbol_in_path(path, symbol) {
+                        if let Ok(content) = std::fs::read_to_string(&node.path) {
+                            let bytes = content.as_bytes();
+                            if node.start_byte < bytes.len() && node.end_byte <= bytes.len() {
+                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]).to_string()
+                            } else {
+                                "Error: Byte range out of bounds".to_string()
+                            }
+                        } else {
+                            "Error: Could not read file".to_string()
+                        }
+                    } else {
+                        "Error: Symbol not found".to_string()
+                    }
+                } else {
+                    "Error: Index not loaded".to_string()
+                }
+            }
+            "pm_init" => {
+                use crate::core::orchestrator::Orchestrator;
+                let mut orch = Orchestrator::new();
+                if orch.build_index(Path::new(".")).is_ok() && orch.save_index_versioned(Path::new(".project-map")).is_ok() {
+                    self.engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
+                    "Index refreshed successfully.".to_string()
+                } else {
+                    "Failed to refresh index.".to_string()
                 }
             }
 
