@@ -1,6 +1,6 @@
 [package]
 name = "project-map-cli-rust"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "High-performance architectural map generator for AI agents and developers."
 license = "MIT"
