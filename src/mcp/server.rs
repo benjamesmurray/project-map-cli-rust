@@ -110,7 +110,7 @@ impl McpServer {
             .try_init();
 
         let server_info = InitializeResult {
-            protocol_version: ProtocolVersion::V2024_11_05.to_string(),
+            protocol_version: ProtocolVersion::V2025_11_25.into(),
             capabilities: ServerCapabilities {
                 tools: Some(ServerCapabilitiesTools { list_changed: None }),
                 ..Default::default()
