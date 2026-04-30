@@ -28,3 +28,6 @@ tokio = { version = "1.36", features = ["full"] }
 chrono = "0.4"
 walkdir = "2.5"
 ignore = "0.4"
+rust-mcp-sdk = { version = "0.5.0", features = ["server", "macros"] }
+async-trait = "0.1"
+schemars = "0.8"

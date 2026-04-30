@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Mcp => {
-            let mut server = McpServer::new();
+            let server = McpServer::new();
             server.run().await?;
         }
     }

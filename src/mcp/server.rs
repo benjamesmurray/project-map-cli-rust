@@ -1,171 +1,191 @@
-use tokio::io::{self, AsyncBufReadExt, BufReader, AsyncWriteExt};
-use serde::Deserialize;
-use serde_json::{json, Value};
+use std::path::Path;
+use std::sync::Arc;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use rust_mcp_sdk::{McpServer as SdkMcpServer, TransportOptions, StdioTransport};
+use rust_mcp_sdk::mcp_server::{server_runtime, ServerHandler};
+use rust_mcp_sdk::schema::{
+    CallToolRequest, CallToolResult, InitializeResult,
+    ListToolsRequest, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools,
+    Implementation, ProtocolVersion, RpcError,
+};
+use rust_mcp_sdk::schema::schema_utils::CallToolError;
+use rust_mcp_sdk::macros::{mcp_tool, JsonSchema};
+
 use crate::error::Result;
 use crate::core::query_engine::QueryEngine;
-use std::path::Path;
+use crate::core::orchestrator::Orchestrator;
 
-#[derive(Deserialize, Debug)]
-struct JsonRpcRequest {
-    #[serde(rename = "jsonrpc")]
-    _jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    params: Option<Value>,
+// --- Tool Definitions ---
+
+#[mcp_tool(
+    name = "pm_status",
+    description = "Returns current workspace context and available commands."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmStatusTool {}
+
+#[mcp_tool(
+    name = "pm_query",
+    description = "Search for symbols or get file context."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmQueryTool {
+    /// Search query for symbols
+    pub query: Option<String>,
+    /// File path to get outline
+    pub path: Option<String>,
 }
 
+#[mcp_tool(
+    name = "pm_check_blast_radius",
+    description = "Identifies all components and files that depend on or import a specific symbol."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmCheckBlastRadiusTool {
+    /// File path where the symbol is defined
+    pub path: String,
+    /// Symbol name to check
+    pub symbol: String,
+}
+
+#[mcp_tool(
+    name = "pm_plan",
+    description = "Analyze the architectural impact (fan-out) of a symbol before starting a refactor."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmPlanTool {
+    /// Symbol name to analyze
+    pub symbol: String,
+}
+
+#[mcp_tool(
+    name = "pm_semantic_search",
+    description = "Search for logic using natural language keywords (e.g., 'auth', 'database')."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmSemanticSearchTool {
+    /// Natural language query
+    pub query: String,
+}
+
+#[mcp_tool(
+    name = "pm_fetch_symbol",
+    description = "Extract raw source code for a specific class or function."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmFetchSymbolTool {
+    /// File path
+    pub path: String,
+    /// Symbol name
+    pub symbol: String,
+}
+
+#[mcp_tool(
+    name = "pm_init",
+    description = "Refresh the map index after significant code changes to maintain discovery accuracy."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct PmInitTool {}
+
+// --- Server Implementation ---
+
 pub struct McpServer {
-    engine: Option<QueryEngine>,
+    engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
 }
 
 impl McpServer {
     pub fn new() -> Self {
         let engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
-        Self { engine }
+        Self {
+            engine: Arc::new(std::sync::RwLock::new(engine)),
+        }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        let stdin = io::stdin();
-        let mut reader = BufReader::new(stdin).lines();
-        let mut stdout = io::stdout();
+    pub async fn run(&self) -> Result<()> {
+        let server_info = InitializeResult {
+            protocol_version: ProtocolVersion::V2024_11_05.to_string(),
+            capabilities: ServerCapabilities {
+                tools: Some(ServerCapabilitiesTools { list_changed: None }),
+                ..Default::default()
+            },
+            server_info: Implementation {
+                name: "project-map-cli-rust".to_string(),
+                version: "0.1.2".to_string(),
+                title: Some("Project Map CLI".to_string()),
+            },
+            instructions: None,
+            meta: None,
+        };
 
-        while let Some(line) = reader.next_line().await? {
-            let req: JsonRpcRequest = match serde_json::from_str(&line) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            let response = self.handle_request(req).await;
-            let response_json = serde_json::to_string(&response)?;
-            stdout.write_all(response_json.as_bytes()).await?;
-            stdout.write_all(b"\n").await?;
-            stdout.flush().await?;
-        }
+        let transport = StdioTransport::new(TransportOptions::default())
+            .map_err(|e| crate::error::AppError::Generic(format!("Transport error: {}", e)))?;
+        let handler = self.clone_for_handler();
+        
+        let server = server_runtime::create_server(server_info, transport, handler);
+        server.start().await.map_err(|e| crate::error::AppError::Generic(format!("Server error: {}", e)))?;
 
         Ok(())
     }
 
-    async fn handle_request(&mut self, req: JsonRpcRequest) -> Value {
-        match req.method.as_str() {
-            "initialize" => json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": {
-                    "protocolVersion": "2025-11-25",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "project-map-cli-rust",
-                        "version": "0.1.2"
-                    }
-                }
-            }),
-            "notifications/initialized" => json!(null),
-            "tools/list" => json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "result": {
-                    "tools": [
-                        {
-                            "name": "pm_status",
-                            "description": "Returns current workspace context and available commands.",
-                            "inputSchema": { "type": "object", "properties": {} }
-                        },
-                        {
-                            "name": "pm_query",
-                            "description": "Search for symbols or get file context.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "query": { "type": "string" },
-                                    "path": { "type": "string" }
-                                }
-                            }
-                        },
-                        {
-                            "name": "pm_check_blast_radius",
-                            "description": "Identifies all components and files that depend on or import a specific symbol.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "path": { "type": "string" },
-                                    "symbol": { "type": "string" }
-                                },
-                                "required": ["path", "symbol"]
-                            }
-                        },
-                        {
-                            "name": "pm_plan",
-                            "description": "Analyze the architectural impact (fan-out) of a symbol before starting a refactor.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "symbol": { "type": "string" }
-                                },
-                                "required": ["symbol"]
-                            }
-                        },
-                        {
-                            "name": "pm_semantic_search",
-                            "description": "Search for logic using natural language keywords (e.g., 'auth', 'database').",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "query": { "type": "string" }
-                                },
-                                "required": ["query"]
-                            }
-                        },
-                        {
-                            "name": "pm_fetch_symbol",
-                            "description": "Extract raw source code for a specific class or function.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "path": { "type": "string" },
-                                    "symbol": { "type": "string" }
-                                },
-                                "required": ["path", "symbol"]
-                            }
-                        },
-                        {
-                            "name": "pm_init",
-                            "description": "Refresh the map index after significant code changes to maintain discovery accuracy.",
-                            "inputSchema": { "type": "object", "properties": {} }
-                        }
-                    ]
-                }
-            }),
-            "tools/call" => self.handle_tool_call(req).await,
-            _ => json!({
-                "jsonrpc": "2.0",
-                "id": req.id,
-                "error": { "code": -32601, "message": "Method not found" }
-            }),
+    fn clone_for_handler(&self) -> McpServerHandler {
+        McpServerHandler {
+            engine: Arc::clone(&self.engine),
         }
     }
+}
 
-    async fn handle_tool_call(&mut self, req: JsonRpcRequest) -> Value {
-        let params = req.params.as_ref().unwrap();
-        let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let tool_args = params.get("arguments").cloned().unwrap_or(json!({}));
+pub struct McpServerHandler {
+    engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
+}
 
-        let text = match tool_name {
+#[async_trait]
+impl ServerHandler for McpServerHandler {
+    async fn handle_list_tools_request(
+        &self,
+        _request: ListToolsRequest,
+        _runtime: &dyn SdkMcpServer,
+    ) -> std::result::Result<ListToolsResult, RpcError> {
+        Ok(ListToolsResult {
+            tools: vec![
+                PmStatusTool::tool(),
+                PmQueryTool::tool(),
+                PmCheckBlastRadiusTool::tool(),
+                PmPlanTool::tool(),
+                PmSemanticSearchTool::tool(),
+                PmFetchSymbolTool::tool(),
+                PmInitTool::tool(),
+            ],
+            next_cursor: None,
+            meta: None,
+        })
+    }
+
+    async fn handle_call_tool_request(
+        &self,
+        request: CallToolRequest,
+        _runtime: &dyn SdkMcpServer,
+    ) -> std::result::Result<CallToolResult, CallToolError> {
+        let arguments = serde_json::Value::Object(request.params.arguments.unwrap_or_default());
+        let text = match request.params.name.as_str() {
             "pm_status" => {
-                if self.engine.is_some() {
+                if self.engine.read().unwrap().is_some() {
                     "Status: System healthy. Index is present.".to_string()
                 } else {
                     "Status: Index missing. Run project-map build.".to_string()
                 }
             }
             "pm_query" => {
-                if let Some(ref engine) = self.engine {
-                    if let Some(q) = tool_args.get("query").and_then(|v| v.as_str()) {
-                        let matches = engine.find_symbols(q);
+                let args: PmQueryTool = serde_json::from_value(arguments)
+                    .map_err(|e| CallToolError(Box::new(e)))?;
+                
+                if let Some(ref engine) = *self.engine.read().unwrap() {
+                    if let Some(q) = args.query {
+                        let matches = engine.find_symbols(&q);
                         format!("Matches: {}", matches.len())
-                    } else if let Some(p) = tool_args.get("path").and_then(|v| v.as_str()) {
-                        let symbols = engine.get_file_outline(p);
+                    } else if let Some(p) = args.path {
+                        let symbols = engine.get_file_outline(&p);
                         format!("Symbols in {}: {}", p, symbols.len())
                     } else {
                         "Error: Provide query or path".to_string()
@@ -175,10 +195,11 @@ impl McpServer {
                 }
             }
             "pm_check_blast_radius" => {
-                if let Some(ref engine) = self.engine {
-                    let path = tool_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                    let symbol = tool_args.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                    let results = engine.check_blast_radius(path, symbol);
+                let args: PmCheckBlastRadiusTool = serde_json::from_value(arguments)
+                    .map_err(|e| CallToolError(Box::new(e)))?;
+                
+                if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let results = engine.check_blast_radius(&args.path, &args.symbol);
 
                     if results.is_empty() {
                         "No dependent components found.".to_string()
@@ -186,7 +207,7 @@ impl McpServer {
                         let mut unique_files = std::collections::HashSet::new();
                         for r in &results { unique_files.insert(&r.path); }
                         format!("Blast Radius for {}:\n- Total Impacted Nodes: {}\n- Unique Files: {}\n(Top 5: {})", 
-                            symbol, results.len(), unique_files.len(),
+                            args.symbol, results.len(), unique_files.len(),
                             results.iter().take(5).map(|r| r.name.as_str()).collect::<Vec<_>>().join(", "))
                     }
                 } else {
@@ -194,24 +215,28 @@ impl McpServer {
                 }
             }
             "pm_plan" => {
-                if let Some(ref engine) = self.engine {
-                    let symbol = tool_args.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                    let impact = engine.analyze_impact(symbol);
-                    let blast = engine.check_blast_radius("", symbol);
+                let args: PmPlanTool = serde_json::from_value(arguments)
+                    .map_err(|e| CallToolError(Box::new(e)))?;
+                
+                if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let impact = engine.analyze_impact(&args.symbol);
+                    let blast = engine.check_blast_radius("", &args.symbol);
 
                     let mut unique_blast = std::collections::HashSet::new();
                     for r in &blast { unique_blast.insert(&r.path); }
 
                     format!("Architectural Plan for {}:\n- Fan-out (Dependencies): {} nodes\n- Fan-in (Dependents): {} nodes across {} files.", 
-                        symbol, impact.len(), blast.len(), unique_blast.len())
+                        args.symbol, impact.len(), blast.len(), unique_blast.len())
                 } else {
                     "Error: Index not loaded".to_string()
                 }
             }
             "pm_semantic_search" => {
-                if let Some(ref engine) = self.engine {
-                    let query = tool_args.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                    let matches = engine.find_symbols(query);
+                let args: PmSemanticSearchTool = serde_json::from_value(arguments)
+                    .map_err(|e| CallToolError(Box::new(e)))?;
+                
+                if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let matches = engine.find_symbols(&args.query);
                     let mut result = format!("Semantic Search Results ({}):", matches.len());
                     for m in matches.iter().take(15) {
                         result.push_str(&format!("\n- {}: {}", m.path, m.name));
@@ -222,10 +247,11 @@ impl McpServer {
                 }
             }
             "pm_fetch_symbol" => {
-                if let Some(ref engine) = self.engine {
-                    let path = tool_args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                    let symbol = tool_args.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                    if let Some(node) = engine.find_symbol_in_path(path, symbol) {
+                let args: PmFetchSymbolTool = serde_json::from_value(arguments)
+                    .map_err(|e| CallToolError(Box::new(e)))?;
+                
+                if let Some(ref engine) = *self.engine.read().unwrap() {
+                    if let Some(node) = engine.find_symbol_in_path(&args.path, &args.symbol) {
                         if let Ok(content) = std::fs::read_to_string(&node.path) {
                             let bytes = content.as_bytes();
                             if node.start_byte < bytes.len() && node.end_byte <= bytes.len() {
@@ -244,27 +270,19 @@ impl McpServer {
                 }
             }
             "pm_init" => {
-                use crate::core::orchestrator::Orchestrator;
                 let mut orch = Orchestrator::new();
                 if orch.build_index(Path::new(".")).is_ok() && orch.save_index_versioned(Path::new(".project-map")).is_ok() {
-                    self.engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
+                    let new_engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
+                    *self.engine.write().unwrap() = new_engine;
                     "Index refreshed successfully.".to_string()
                 } else {
                     "Failed to refresh index.".to_string()
                 }
             }
 
-            _ => "Error: Unknown tool".to_string(),
+            _ => return Err(CallToolError(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unknown tool")))),
         };
 
-        json!({
-            "jsonrpc": "2.0",
-            "id": req.id,
-            "result": {
-                "content": [
-                    { "type": "text", "text": text }
-                ]
-            }
-        })
+        Ok(CallToolResult::text_content(vec![text.into()]))
     }
 }

@@ -15,7 +15,7 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
   - Automatic `.gitignore` respect for clean indexing.
   - Timestamped backups for every build.
   - Consistent `latest/` symlink for stable integration.
-- **MCP Server:** Built-in Model Context Protocol server exposing `pm_status`, `pm_query`, `pm_check_blast_radius`, and `pm_plan` tools.
+- **MCP Server:** Built-in Model Context Protocol server exposing `pm_status`, `pm_query`, `pm_check_blast_radius`, and `pm_plan` tools. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
 
 ## 🛠 Installation
 
