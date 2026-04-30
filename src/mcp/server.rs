@@ -3,11 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use rust_mcp_sdk::{McpServer as SdkMcpServer, TransportOptions, StdioTransport};
-use rust_mcp_sdk::mcp_server::{server_runtime, ServerHandler};
+use rust_mcp_sdk::{McpServer as SdkMcpServer, TransportOptions, StdioTransport, ToMcpServerHandler};
+use rust_mcp_sdk::mcp_server::{server_runtime, McpServerOptions, ServerHandler};
 use rust_mcp_sdk::schema::{
-    CallToolRequest, CallToolResult, InitializeResult,
-    ListToolsRequest, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools,
+    CallToolRequestParams, CallToolResult, InitializeResult,
+    PaginatedRequestParams, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools,
     Implementation, ProtocolVersion, RpcError,
 };
 use rust_mcp_sdk::schema::schema_utils::CallToolError;
@@ -119,6 +119,9 @@ impl McpServer {
                 name: "project-map-cli-rust".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 title: Some("Project Map CLI".to_string()),
+                description: None,
+                icons: vec![],
+                website_url: None,
             },
             instructions: None,
             meta: None,
@@ -128,7 +131,16 @@ impl McpServer {
             .map_err(|e| crate::error::AppError::Generic(format!("Transport error: {}", e)))?;
         let handler = self.clone_for_handler();
         
-        let server = server_runtime::create_server(server_info, transport, handler);
+        let options = McpServerOptions {
+            server_details: server_info,
+            transport,
+            handler: handler.to_mcp_server_handler(),
+            task_store: None,
+            client_task_store: None,
+            message_observer: None,
+        };
+
+        let server = server_runtime::create_server(options);
         server.start().await.map_err(|e| crate::error::AppError::Generic(format!("Server error: {}", e)))?;
 
         Ok(())
@@ -149,8 +161,8 @@ pub struct McpServerHandler {
 impl ServerHandler for McpServerHandler {
     async fn handle_list_tools_request(
         &self,
-        _request: ListToolsRequest,
-        _runtime: &dyn SdkMcpServer,
+        _params: Option<PaginatedRequestParams>,
+        _runtime: Arc<dyn SdkMcpServer>,
     ) -> std::result::Result<ListToolsResult, RpcError> {
         Ok(ListToolsResult {
             tools: vec![
@@ -167,17 +179,13 @@ impl ServerHandler for McpServerHandler {
         })
     }
 
-    async fn on_server_started(&self, _runtime: &dyn SdkMcpServer) {
-        // Silence the default "Server started successfully" message which can corrupt stdout
-    }
-
     async fn handle_call_tool_request(
         &self,
-        request: CallToolRequest,
-        _runtime: &dyn SdkMcpServer,
+        params: CallToolRequestParams,
+        _runtime: Arc<dyn SdkMcpServer>,
     ) -> std::result::Result<CallToolResult, CallToolError> {
-        let arguments = serde_json::Value::Object(request.params.arguments.unwrap_or_default());
-        let text = match request.params.name.as_str() {
+        let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
+        let text = match params.name.as_str() {
             "pm_status" => {
                 if self.engine.read().unwrap().is_some() {
                     "Status: System healthy. Index is present.".to_string()
