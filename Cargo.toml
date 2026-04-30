@@ -31,3 +31,5 @@ ignore = "0.4"
 rust-mcp-sdk = { version = "0.5.0", features = ["server", "macros"] }
 async-trait = "0.1"
 schemars = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"

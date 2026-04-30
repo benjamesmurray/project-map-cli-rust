@@ -12,6 +12,7 @@ use rust_mcp_sdk::schema::{
 };
 use rust_mcp_sdk::schema::schema_utils::CallToolError;
 use rust_mcp_sdk::macros::{mcp_tool, JsonSchema};
+use tracing_subscriber::fmt;
 
 use crate::error::Result;
 use crate::core::query_engine::QueryEngine;
@@ -104,6 +105,10 @@ impl McpServer {
     }
 
     pub async fn run(&self) -> Result<()> {
+        let _ = fmt()
+            .with_writer(std::io::stderr)
+            .try_init();
+
         let server_info = InitializeResult {
             protocol_version: ProtocolVersion::V2024_11_05.to_string(),
             capabilities: ServerCapabilities {
@@ -112,7 +117,7 @@ impl McpServer {
             },
             server_info: Implementation {
                 name: "project-map-cli-rust".to_string(),
-                version: "0.1.2".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 title: Some("Project Map CLI".to_string()),
             },
             instructions: None,
