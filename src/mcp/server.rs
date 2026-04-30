@@ -167,6 +167,10 @@ impl ServerHandler for McpServerHandler {
         })
     }
 
+    async fn on_server_started(&self, _runtime: &dyn SdkMcpServer) {
+        // Silence the default "Server started successfully" message which can corrupt stdout
+    }
+
     async fn handle_call_tool_request(
         &self,
         request: CallToolRequest,
