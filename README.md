@@ -3,6 +3,7 @@
 A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This tool provides AI agents and developers with a contextually efficient architectural map of a codebase, enabling deep navigation and dependency analysis without massive token overhead.
 
 ## 🚀 Features
+- **Agent-Native TOON Output:** Standardized "Token-Oriented Object Notation" presentation layer designed specifically for LLM context efficiency and readability.
 - **Multi-Language AST Parsing:** Powered by Tree-sitter for high-fidelity symbol extraction.
   - Supported: **Rust, Python, TypeScript/TSX, Kotlin, SQL, Vue 3**.
 - **Architectural Discovery:**
@@ -11,9 +12,10 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
   - `blast`: Inbound dependency analysis (who depends on this?).
   - `impact`: Outbound dependency analysis (what does this depend on?).
   - `fetch`: Precise extraction of raw source code using byte-range hydration.
-- **Smart Versioning:**
+- **Smart Versioning & Reliability:**
   - Automatic `.gitignore` respect for clean indexing.
-  - Timestamped backups for every build.
+  - Explicit self-exclusion of the `.project-map` directory to avoid metadata noise.
+  - Rotating backups: Automatically maintains the **5 most recent builds** to save space.
   - Consistent `latest/` symlink for stable integration.
 - **MCP Server:** Built-in Model Context Protocol server exposing `pm_status`, `pm_query`, `pm_check_blast_radius`, and `pm_plan` tools. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
 
@@ -57,7 +59,7 @@ project-map mcp
 ## 📂 Storage Structure
 The tool maintains state in the `.project-map/` directory:
 - `latest/`: Symlink to the most recent successful build.
-- `backups/`: Historical snapshots of the project's architecture.
+- `backups/`: Historical snapshots (limited to 5) of the project's architecture.
 
 ## License
 MIT

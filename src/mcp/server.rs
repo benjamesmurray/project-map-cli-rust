@@ -17,6 +17,7 @@ use tracing_subscriber::fmt;
 use crate::error::Result;
 use crate::core::query_engine::QueryEngine;
 use crate::core::orchestrator::Orchestrator;
+use crate::core::toon::ToonFormatter;
 
 // --- Tool Definitions ---
 
@@ -187,11 +188,8 @@ impl ServerHandler for McpServerHandler {
         let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let text = match params.name.as_str() {
             "pm_status" => {
-                if self.engine.read().unwrap().is_some() {
-                    "Status: System healthy. Index is present.".to_string()
-                } else {
-                    "Status: Index missing. Run project-map build.".to_string()
-                }
+                let is_ready = self.engine.read().unwrap().is_some();
+                ToonFormatter::format_status(is_ready, Some(".project-map/latest/.project-map.json"))
             }
             "pm_query" => {
                 let args: PmQueryTool = serde_json::from_value(arguments)
@@ -200,10 +198,10 @@ impl ServerHandler for McpServerHandler {
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     if let Some(q) = args.query {
                         let matches = engine.find_symbols(&q);
-                        format!("Matches: {}", matches.len())
+                        ToonFormatter::format_symbols(&q, &matches)
                     } else if let Some(p) = args.path {
                         let symbols = engine.get_file_outline(&p);
-                        format!("Symbols in {}: {}", p, symbols.len())
+                        ToonFormatter::format_file_context(&p, &symbols)
                     } else {
                         "Error: Provide query or path".to_string()
                     }
@@ -217,16 +215,7 @@ impl ServerHandler for McpServerHandler {
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let results = engine.check_blast_radius(&args.path, &args.symbol);
-
-                    if results.is_empty() {
-                        "No dependent components found.".to_string()
-                    } else {
-                        let mut unique_files = std::collections::HashSet::new();
-                        for r in &results { unique_files.insert(&r.path); }
-                        format!("Blast Radius for {}:\n- Total Impacted Nodes: {}\n- Unique Files: {}\n(Top 5: {})", 
-                            args.symbol, results.len(), unique_files.len(),
-                            results.iter().take(5).map(|r| r.name.as_str()).collect::<Vec<_>>().join(", "))
-                    }
+                    ToonFormatter::format_blast_radius(&args.path, &args.symbol, &results)
                 } else {
                     "Error: Index not loaded".to_string()
                 }
@@ -237,13 +226,7 @@ impl ServerHandler for McpServerHandler {
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let impact = engine.analyze_impact(&args.symbol);
-                    let blast = engine.check_blast_radius("", &args.symbol);
-
-                    let mut unique_blast = std::collections::HashSet::new();
-                    for r in &blast { unique_blast.insert(&r.path); }
-
-                    format!("Architectural Plan for {}:\n- Fan-out (Dependencies): {} nodes\n- Fan-in (Dependents): {} nodes across {} files.", 
-                        args.symbol, impact.len(), blast.len(), unique_blast.len())
+                    ToonFormatter::format_impact_analysis(&args.symbol, &impact)
                 } else {
                     "Error: Index not loaded".to_string()
                 }
@@ -254,11 +237,7 @@ impl ServerHandler for McpServerHandler {
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let matches = engine.find_symbols(&args.query);
-                    let mut result = format!("Semantic Search Results ({}):", matches.len());
-                    for m in matches.iter().take(15) {
-                        result.push_str(&format!("\n- {}: {}", m.path, m.name));
-                    }
-                    result
+                    ToonFormatter::format_symbols(&args.query, &matches)
                 } else {
                     "Error: Index not loaded".to_string()
                 }
@@ -272,7 +251,8 @@ impl ServerHandler for McpServerHandler {
                         if let Ok(content) = std::fs::read_to_string(&node.path) {
                             let bytes = content.as_bytes();
                             if node.start_byte < bytes.len() && node.end_byte <= bytes.len() {
-                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]).to_string()
+                                let content_str = String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]);
+                                ToonFormatter::format_fetch_result(&args.path, &args.symbol, Some(&content_str))
                             } else {
                                 "Error: Byte range out of bounds".to_string()
                             }
@@ -280,7 +260,7 @@ impl ServerHandler for McpServerHandler {
                             "Error: Could not read file".to_string()
                         }
                     } else {
-                        "Error: Symbol not found".to_string()
+                        ToonFormatter::format_fetch_result(&args.path, &args.symbol, None)
                     }
                 } else {
                     "Error: Index not loaded".to_string()

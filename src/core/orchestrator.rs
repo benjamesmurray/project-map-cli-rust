@@ -26,7 +26,11 @@ impl Orchestrator {
 
         // Pass 1: Parse all files and create nodes
         // WalkBuilder respects .gitignore by default
-        for result in WalkBuilder::new(root).build() {
+        let walk = WalkBuilder::new(root)
+            .filter_entry(|e| e.file_name() != ".project-map")
+            .build();
+
+        for result in walk {
             let entry = match result {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -132,6 +136,17 @@ impl Orchestrator {
         
         let index_path = current_backup_dir.join(".project-map.json");
         self.graph.save(&index_path)?;
+
+        // Limit backups to 5
+        if let Ok(entries) = fs::read_dir(&backups_dir) {
+            let mut dirs: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            dirs.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).unwrap_or_else(|_| std::time::SystemTime::UNIX_EPOCH));
+            
+            while dirs.len() > 5 {
+                let oldest = dirs.remove(0);
+                fs::remove_dir_all(oldest.path()).ok();
+            }
+        }
 
         let latest_link = base_dir.join("latest");
         if latest_link.exists() {
