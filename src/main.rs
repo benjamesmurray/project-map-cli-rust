@@ -1,4 +1,3 @@
-use std::path::Path;
 use clap::Parser;
 use project_map_cli_rust::cli::commands::{Cli, Commands};
 use project_map_cli_rust::error::Result;
@@ -7,42 +6,44 @@ use project_map_cli_rust::core::query_engine::QueryEngine;
 use project_map_cli_rust::core::toon::ToonFormatter;
 use project_map_cli_rust::mcp::server::McpServer;
 
-const INDEX_DIR: &str = ".project-map";
-const INDEX_LATEST: &str = ".project-map/latest/.project-map.json";
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let get_index_path = |index_dir: &str| -> std::path::PathBuf {
+        std::path::Path::new(index_dir).join("latest").join(".project-map.json")
+    };
+
     match cli.command {
-        Commands::Build { root, out: _ } | Commands::Refresh { root, out: _ } => {
+        Commands::Build { root, out } | Commands::Refresh { root, out } => {
             println!("Building project map index with rotation...");
             let mut orch = Orchestrator::new();
-            orch.build_index(Path::new(&root))?;
-            orch.save_index_versioned(Path::new(INDEX_DIR))?;
-            println!("Index saved and versioned in {}", INDEX_DIR);
+            orch.build_index(std::path::Path::new(&root))?;
+            orch.save_index_versioned(std::path::Path::new(&out))?;
+            println!("Index saved and versioned in {}", out);
         }
-        Commands::Find { query } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Find { query, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             let matches = engine.find_symbols(&query);
             println!("{}", ToonFormatter::format_symbols(&query, &matches));
         }
-        Commands::Context { path } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Context { path, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             let symbols = engine.get_file_outline(&path);
             println!("{}", ToonFormatter::format_file_context(&path, &symbols));
         }
-        Commands::Impact { fqn } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Impact { fqn, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             let impact = engine.analyze_impact(&fqn);
             println!("{}", ToonFormatter::format_impact_analysis(&fqn, &impact));
         }
-        Commands::Status => {
-            let is_ready = Path::new(INDEX_LATEST).exists();
-            println!("{}", ToonFormatter::format_status(is_ready, Some(INDEX_LATEST)));
+        Commands::Status { index } => {
+            let path = get_index_path(&index);
+            let is_ready = path.exists();
+            println!("{}", ToonFormatter::format_status(is_ready, path.to_str()));
         }
-        Commands::Fetch { path, symbol } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Fetch { path, symbol, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             if let Some(node) = engine.find_symbol_in_path(&path, &symbol) {
                 let content = std::fs::read_to_string(&node.path)?;
                 let bytes = content.as_bytes();
@@ -57,13 +58,13 @@ async fn main() -> Result<()> {
                 println!("{}", ToonFormatter::format_fetch_result(&path, &symbol, None));
             }
         }
-        Commands::Blast { path, symbol } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Blast { path, symbol, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             let results = engine.check_blast_radius(&path, &symbol);
             println!("{}", ToonFormatter::format_blast_radius(&path, &symbol, &results));
         }
-        Commands::Search { query } => {
-            let engine = QueryEngine::load(Path::new(INDEX_LATEST))?;
+        Commands::Search { query, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
             let matches = engine.find_symbols(&query);
             println!("{}", ToonFormatter::format_symbols(&query, &matches));
         }

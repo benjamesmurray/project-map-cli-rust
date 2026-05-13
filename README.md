@@ -6,6 +6,8 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
 - **Agent-Native TOON Output:** Standardized "Token-Oriented Object Notation" presentation layer designed specifically for LLM context efficiency and readability.
 - **Multi-Language AST Parsing:** Powered by Tree-sitter for high-fidelity symbol extraction.
   - Supported: **Rust, Python, TypeScript/TSX, Kotlin, SQL, Vue 3**.
+  - **Modern TypeScript:** Robust support for Arrow Functions, Enums, Interfaces, and Re-exports.
+  - **Semantic Docstring Search:** Comments and JSDoc/KDoc are indexed and associated with their respective symbols, allowing you to search by architectural intent.
 - **Architectural Discovery:**
   - `find`: Fast substring search for symbols across the monorepo.
   - `context`: Dense architectural overview of any source file.
@@ -15,6 +17,7 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
 - **Smart Versioning & Reliability:**
   - Automatic `.gitignore` respect for clean indexing.
   - Explicit self-exclusion of the `.project-map` directory to avoid metadata noise.
+  - **Custom Index Paths:** Use `--out` and `--index` to manage maps for external projects without cluttering source directories.
   - Rotating backups: Automatically maintains the **5 most recent builds** to save space.
   - Consistent `latest/` symlink for stable integration.
 - **MCP Server:** Built-in Model Context Protocol server exposing `pm_status`, `pm_query`, `pm_check_blast_radius`, and `pm_plan` tools. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
@@ -30,12 +33,20 @@ cargo install project-map-cli-rust
 ### 1. Build the Map
 Index your project and create a versioned snapshot.
 ```bash
+# Standard usage
 project-map build --root .
+
+# Build for an external project into a specific directory
+project-map build --root /path/to/other/project --out ./external-map
 ```
 
 ### 2. Find a Symbol
 ```bash
+# Search using default .project-map index
 project-map find --query "MyService"
+
+# Search using a specific index directory
+project-map find --query "MyService" --index ./external-map
 ```
 
 ### 3. Analyze Blast Radius
@@ -57,7 +68,7 @@ project-map mcp
 ```
 
 ## 📂 Storage Structure
-The tool maintains state in the `.project-map/` directory:
+The tool maintains state in the `.project-map/` directory (or your custom `--out` directory):
 - `latest/`: Symlink to the most recent successful build.
 - `backups/`: Historical snapshots (limited to 5) of the project's architecture.
 

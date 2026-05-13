@@ -14,9 +14,27 @@ impl QueryEngine {
     }
 
     pub fn find_symbols(&self, query: &str) -> Vec<NodeData> {
-        let query_lower = query.to_lowercase();
+        let keywords: Vec<String> = query.to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+            
+        if keywords.is_empty() {
+            return Vec::new();
+        }
+
         self.graph.graph.node_weights()
-            .filter(|n| n.node_type == NodeType::Symbol && n.name.to_lowercase().contains(&query_lower))
+            .filter(|n| {
+                if n.node_type != NodeType::Symbol {
+                    return false;
+                }
+                
+                let name_lower = n.name.to_lowercase();
+                let doc_lower = n.docstring.as_ref().map(|d| d.to_lowercase()).unwrap_or_default();
+                
+                // Match if ALL keywords are found in either name or docstring
+                keywords.iter().all(|k| name_lower.contains(k) || doc_lower.contains(k))
+            })
             .cloned()
             .collect()
     }

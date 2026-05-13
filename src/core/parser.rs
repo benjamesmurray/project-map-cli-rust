@@ -12,6 +12,7 @@ pub struct Symbol {
     pub line: usize,
     pub start_byte: usize,
     pub end_byte: usize,
+    pub docstring: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,7 +42,8 @@ impl CodeParser {
         let (language, ts_language) = match extension {
             "py" => ("python", tree_sitter_python::LANGUAGE.into()),
             "rs" => ("rust", tree_sitter_rust::LANGUAGE.into()),
-            "ts" | "tsx" => ("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            "ts" => ("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            "tsx" => ("typescript", tree_sitter_typescript::LANGUAGE_TSX.into()),
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
             "sql" => ("sql", tree_sitter_sequel::LANGUAGE.into()),
             "vue" => ("vue", tree_sitter_vue_updated::language().into()),
@@ -59,21 +61,37 @@ impl CodeParser {
             "python" => "((class_definition name: (identifier) @name) @class)
                          ((function_definition name: (identifier) @name) @function)
                          (import_statement (dotted_name) @import)
-                         (import_from_statement module_name: (dotted_name) @import)",
+                         (import_from_statement module_name: (dotted_name) @import)
+                         (expression_statement (string) @doc)",
             "rust" => "((struct_item name: (type_identifier) @name) @struct)
                        ((enum_item name: (type_identifier) @name) @enum)
                        ((function_item name: (identifier) @name) @function)
                        ((trait_item name: (type_identifier) @name) @trait)
-                       ((impl_item type: (_) @name) @impl)",
+                       ((impl_item type: (_) @name) @impl)
+                       (line_doc_comment) @doc
+                       (block_doc_comment) @doc",
             "typescript" => "((class_declaration name: (type_identifier) @name) @class)
                              ((function_declaration name: (identifier) @name) @function)
+                             ((generator_function_declaration name: (identifier) @name) @function)
                              ((interface_declaration name: (type_identifier) @name) @interface)
                              ((type_alias_declaration name: (type_identifier) @name) @type)
+                             ((enum_declaration name: (identifier) @name) @enum)
                              ((method_definition name: (property_identifier) @name) @function)
-                             (import_statement source: (string (string_fragment) @import))",
-            "kotlin" => "((class_declaration) @name) @class
-                         ((function_declaration) @name) @function
-                         ((_) @import)",
+                             ((variable_declarator name: (identifier) @name value: (arrow_function)) @function)
+                             ((variable_declarator name: (identifier) @name value: (function_expression)) @function)
+                             ((variable_declarator name: (identifier) @name) @variable)
+                             (internal_module name: (identifier) @name) @module
+                             (import_statement source: (string (string_fragment) @import))
+                             (export_statement source: (string (string_fragment) @import))
+                             (export_statement (export_clause (export_specifier name: (identifier) @name)) @export)
+                             (comment) @doc",
+            "kotlin" => "((class_declaration name: (identifier) @name) @class)
+                         ((object_declaration name: (identifier) @name) @class)
+                         ((companion_object name: (identifier) @name) @class)
+                         ((function_declaration name: (identifier) @name) @function)
+                         (import (qualified_identifier) @import)
+                         (line_comment) @doc
+                         (block_comment) @doc",
             "sql" => "((identifier) @name) @symbol",
             "vue" => "((tag_name) @name) @component",
             _ => unreachable!(),
@@ -87,6 +105,8 @@ impl CodeParser {
 
         let mut symbols = Vec::new();
         let mut imports = Vec::new();
+        let mut raw_docs = Vec::new();
+
         while let Some(m) = matches.next() {
             let mut name = String::new();
             let mut kind = String::new();
@@ -94,6 +114,7 @@ impl CodeParser {
             let mut start_byte = 0;
             let mut end_byte = 0;
             let mut is_import = false;
+            let mut is_doc = false;
 
             for capture in m.captures {
                 let capture_name = query.capture_names()[capture.index as usize].to_string();
@@ -105,6 +126,16 @@ impl CodeParser {
                         imports.push(imp);
                     }
                     is_import = true;
+                    break;
+                } else if capture_name == "doc" {
+                    let text = capture.node.utf8_text(content.as_bytes()).unwrap_or("");
+                    // For Python, only keep if it's a docstring (this is a heuristic)
+                    if language == "python" && !(text.starts_with("\"\"\"") || text.starts_with("'''")) {
+                        continue;
+                    }
+                    
+                    raw_docs.push((capture.node.start_position().row + 1, capture.node.start_byte(), capture.node.end_byte(), text.to_string()));
+                    is_doc = true;
                     break;
                 } else if capture_name == "name" {
                     name = capture.node.utf8_text(content.as_bytes())
@@ -118,8 +149,7 @@ impl CodeParser {
                 }
             }
             
-            if !is_import && !name.is_empty() && !kind.is_empty() {
-                // Clean up name: remove excessive whitespace and truncate
+            if !is_import && !is_doc && !name.is_empty() && !kind.is_empty() {
                 let mut clean_name = name.replace("\n", " ")
                     .split_whitespace()
                     .collect::<Vec<_>>()
@@ -135,9 +165,31 @@ impl CodeParser {
                     line,
                     start_byte,
                     end_byte,
+                    docstring: None,
                 });
             }
         }
+
+        // Second pass: Associate docstrings with symbols
+        for symbol in &mut symbols {
+            let mut attached_docs = Vec::new();
+            for (doc_line, doc_start, doc_end, doc_text) in &raw_docs {
+                // Case 1: Docstring is immediately before the symbol (within 2 lines)
+                if *doc_line < symbol.line && *doc_line >= symbol.line.saturating_sub(2) {
+                    attached_docs.push(doc_text.clone());
+                }
+                // Case 2: Docstring is inside the symbol's byte range
+                else if *doc_start >= symbol.start_byte && *doc_end <= symbol.end_byte {
+                    attached_docs.push(doc_text.clone());
+                }
+            }
+            if !attached_docs.is_empty() {
+                symbol.docstring = Some(attached_docs.join("\n\n"));
+            }
+        }
+
+        // Final filtering: remove noisy variables
+        symbols.retain(|s| s.kind != "variable" || s.docstring.is_some());
 
         // For Vue, always add a component symbol based on the filename
         if language == "vue" {
@@ -148,6 +200,7 @@ impl CodeParser {
                 line: 1,
                 start_byte: 0,
                 end_byte: content.len(),
+                docstring: None,
             });
         }
 

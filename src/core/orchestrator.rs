@@ -51,6 +51,7 @@ impl Orchestrator {
                                 start_byte: 0,
                                 end_byte: 0,
                                 node_type: NodeType::File,
+                                docstring: None,
                             });
                             fqn_to_node.insert(fqn, file_node);
                             path_to_node.insert(outline.path.clone(), file_node);
@@ -64,6 +65,7 @@ impl Orchestrator {
                                     start_byte: symbol.start_byte,
                                     end_byte: symbol.end_byte,
                                     node_type: NodeType::Symbol,
+                                    docstring: symbol.docstring.clone(),
                                 });
                                 self.graph.add_edge(file_node, symbol_node, EdgeType::Contains);
                             }

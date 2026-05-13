@@ -19,6 +19,7 @@ pub struct NodeData {
     pub start_byte: usize,
     pub end_byte: usize,
     pub node_type: NodeType,
+    pub docstring: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
