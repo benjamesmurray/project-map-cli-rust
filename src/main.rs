@@ -18,6 +18,7 @@ async fn main() -> Result<()> {
         Commands::Build { root, out } | Commands::Refresh { root, out } => {
             println!("Building project map index with rotation...");
             let mut orch = Orchestrator::new();
+            let _ = orch.scaffold_if_empty(std::path::Path::new(&root));
             orch.build_index(std::path::Path::new(&root))?;
             orch.save_index_versioned(std::path::Path::new(&out))?;
             println!("Index saved and versioned in {}", out);

@@ -15,7 +15,8 @@ pub fn path_to_fqn(root: &Path, path: &Path) -> String {
             .trim_end_matches(".ts")
             .trim_end_matches(".kt")
             .trim_end_matches(".sql")
-            .trim_end_matches(".vue");
+            .trim_end_matches(".vue")
+            .trim_end_matches(".md");
             
         if !clean_part.is_empty() {
             parts.push(clean_part.to_string());

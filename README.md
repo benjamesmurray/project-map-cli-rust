@@ -15,12 +15,20 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
   - `impact`: Outbound dependency analysis (what does this depend on?).
   - `fetch`: Precise extraction of raw source code using byte-range hydration.
 - **Smart Versioning & Reliability:**
+  - **Cold Start Auto-Scaffolding:** Automatically creates an `ARCHITECTURE.md` template in empty projects during `pm_init` to provide an immediate landing pad for AI agents.
   - Automatic `.gitignore` respect for clean indexing.
   - Explicit self-exclusion of the `.project-map` directory to avoid metadata noise.
   - **Custom Index Paths:** Use `--out` and `--index` to manage maps for external projects without cluttering source directories.
   - Rotating backups: Automatically maintains the **5 most recent builds** to save space.
   - Consistent `latest/` symlink for stable integration.
-- **MCP Server:** Built-in Model Context Protocol server exposing `pm_status`, `pm_query`, `pm_check_blast_radius`, and `pm_plan` tools. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
+- **MCP Server:** Built-in Model Context Protocol server exposing a suite of tools for deep codebase interaction. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
+  - `pm_status`: Returns current workspace context and available commands.
+  - `pm_query`: Search for symbols or get file context.
+  - `pm_check_blast_radius`: Identifies all components and files that depend on or import a specific symbol.
+  - `pm_plan`: Analyze the architectural impact (fan-out) of a symbol before starting a refactor.
+  - `pm_semantic_search`: Search for logic using natural language keywords (e.g., 'auth', 'database').
+  - `pm_fetch_symbol`: Extract raw source code for a specific class or function.
+  - `pm_init`: Refresh the map index after significant code changes to maintain discovery accuracy.
 
 ## 🛠 Installation
 

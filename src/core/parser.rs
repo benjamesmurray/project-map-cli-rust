@@ -47,6 +47,14 @@ impl CodeParser {
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
             "sql" => ("sql", tree_sitter_sequel::LANGUAGE.into()),
             "vue" => ("vue", tree_sitter_vue_updated::language().into()),
+            "md" => {
+                return Ok(FileOutline {
+                    path: path.to_string_lossy().to_string(),
+                    language: "markdown".to_string(),
+                    symbols: Vec::new(),
+                    imports: Vec::new(),
+                });
+            }
             _ => return Err(AppError::Parser(format!("Unsupported extension: {}", extension))),
         };
 

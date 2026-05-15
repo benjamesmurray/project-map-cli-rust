@@ -39,7 +39,7 @@ impl Orchestrator {
             let path = entry.path();
             if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
                 let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "sql" || extension == "vue" {
+                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "sql" || extension == "vue" || extension == "md" {
                     match self.parser.parse_file(path) {
                         Ok(outline) => {
                             let fqn = path_to_fqn(root, path);
@@ -119,6 +119,40 @@ impl Orchestrator {
         }
 
         Ok(())
+    }
+
+    pub fn is_effectively_empty(&self, root: &Path) -> bool {
+        let walk = WalkBuilder::new(root)
+            .filter_entry(|e| {
+                let name = e.file_name();
+                name != ".project-map" && name != ".git"
+            })
+            .build();
+
+        for result in walk {
+            let entry = match result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                // If we find ANY non-hidden file (WalkBuilder respects .gitignore), it's not empty
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn scaffold_if_empty(&self, root: &Path) -> Result<bool> {
+        if self.is_effectively_empty(root) {
+            let arch_path = root.join("ARCHITECTURE.md");
+            if !arch_path.exists() {
+                let content = "# Project Architecture\n\nThis is a placeholder for the project's architectural overview. Use this file to define the system structure, core components, and design principles.\n";
+                std::fs::write(&arch_path, content)?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn save_index(&self, path: &Path) -> Result<()> {

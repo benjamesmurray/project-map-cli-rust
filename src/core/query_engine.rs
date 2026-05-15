@@ -40,6 +40,13 @@ impl QueryEngine {
     }
 
     pub fn get_file_outline(&self, path: &str) -> Vec<NodeData> {
+        if path == "." || path == "./" {
+            return self.graph.graph.node_weights()
+                .filter(|n| n.node_type == NodeType::File)
+                .cloned()
+                .collect();
+        }
+
         let file_node = self.graph.graph.node_indices()
             .find(|i| self.graph.graph[*i].node_type == NodeType::File && self.graph.graph[*i].path == path);
 

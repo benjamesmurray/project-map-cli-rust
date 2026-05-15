@@ -268,6 +268,7 @@ impl ServerHandler for McpServerHandler {
             }
             "pm_init" => {
                 let mut orch = Orchestrator::new();
+                let _ = orch.scaffold_if_empty(Path::new("."));
                 if orch.build_index(Path::new(".")).is_ok() && orch.save_index_versioned(Path::new(".project-map")).is_ok() {
                     let new_engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
                     *self.engine.write().unwrap() = new_engine;
