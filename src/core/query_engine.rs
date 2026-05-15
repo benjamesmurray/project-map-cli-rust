@@ -124,4 +124,21 @@ impl QueryEngine {
             .find(|n| n.node_type == NodeType::Symbol && n.path == path && n.name == name)
             .cloned()
     }
+
+    pub fn find_files(&self, query: &str) -> Vec<NodeData> {
+        let query_lower = query.to_lowercase();
+        self.graph.graph.node_weights()
+            .filter(|n| {
+                n.node_type == NodeType::File && n.path.to_lowercase().contains(&query_lower)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn get_all_file_paths(&self) -> Vec<String> {
+        self.graph.graph.node_weights()
+            .filter(|n| n.node_type == NodeType::File)
+            .map(|n| n.path.clone())
+            .collect()
+    }
 }

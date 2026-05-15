@@ -110,17 +110,48 @@ impl ToonFormatter {
         output
     }
 
-    pub fn format_status(is_ready: bool, index_path: Option<&str>) -> String {
+    pub fn format_status(is_ready: bool, index_path: Option<&str>, pulse_tree: Option<&str>, active_features: &[String]) -> String {
         let mut output = "Project Map CLI - Status\n".to_string();
         if is_ready {
             output.push_str("Phase: Ready\n");
             if let Some(path) = index_path {
                 output.push_str(&format!("Index: Found ({})\n", path));
             }
+
+            if let Some(tree) = pulse_tree {
+                output.push_str("\n--- Project Pulse ---\n");
+                output.push_str(tree);
+            }
+
+            if !active_features.is_empty() {
+                output.push_str("\n--- Active Features ---\n");
+                for feature in active_features {
+                    output.push_str(&format!("- projects/active/{}\n", feature));
+                }
+            }
         } else {
             output.push_str("Phase: Discovery (No index found)\n");
             output.push_str("Next Step: Run `project-map build` to generate the index.\n");
         }
+        output
+    }
+
+    pub fn format_file_matches(query: &str, matches: &[NodeData]) -> String {
+        let mut output = format!("Resource: Files | Query: {}\n", query);
+        output.push_str(&format!("Matches Found: {}\n", matches.len()));
+        
+        for m in matches.iter().take(10) {
+            output.push_str(&format!("- {}\n", m.path));
+        }
+        
+        if matches.len() > 10 {
+            output.push_str(&format!("... and {} more.\n", matches.len() - 10));
+        }
+
+        if let Some(first) = matches.first() {
+            output.push_str(&format!("\nNext Step: `project-map context --path {}` to see the file outline.", first.path));
+        }
+
         output
     }
 

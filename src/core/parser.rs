@@ -47,10 +47,17 @@ impl CodeParser {
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
             "sql" => ("sql", tree_sitter_sequel::LANGUAGE.into()),
             "vue" => ("vue", tree_sitter_vue_updated::language().into()),
-            "md" => {
+            "md" | "json" | "toml" | "yaml" | "yml" => {
+                let lang = match extension {
+                    "md" => "markdown",
+                    "json" => "json",
+                    "toml" => "toml",
+                    "yaml" | "yml" => "yaml",
+                    _ => "text",
+                };
                 return Ok(FileOutline {
                     path: path.to_string_lossy().to_string(),
-                    language: "markdown".to_string(),
+                    language: lang.to_string(),
                     symbols: Vec::new(),
                     imports: Vec::new(),
                 });
@@ -76,8 +83,8 @@ impl CodeParser {
                        ((function_item name: (identifier) @name) @function)
                        ((trait_item name: (type_identifier) @name) @trait)
                        ((impl_item type: (_) @name) @impl)
-                       (line_doc_comment) @doc
-                       (block_doc_comment) @doc",
+                       ((line_comment) @doc (#match? @doc \"^///\"))
+                       ((block_comment) @doc (#match? @doc \"^/\\\\*\\\\*\"))",
             "typescript" => "((class_declaration name: (type_identifier) @name) @class)
                              ((function_declaration name: (identifier) @name) @function)
                              ((generator_function_declaration name: (identifier) @name) @function)

@@ -18,6 +18,7 @@ use crate::error::Result;
 use crate::core::query_engine::QueryEngine;
 use crate::core::orchestrator::Orchestrator;
 use crate::core::toon::ToonFormatter;
+use crate::core::utils::render_tree;
 
 // --- Tool Definitions ---
 
@@ -38,6 +39,8 @@ pub struct PmQueryTool {
     pub query: Option<String>,
     /// File path to get outline
     pub path: Option<String>,
+    /// Search for filenames across the tree
+    pub filename: Option<String>,
 }
 
 #[mcp_tool(
@@ -188,8 +191,24 @@ impl ServerHandler for McpServerHandler {
         let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let text = match params.name.as_str() {
             "pm_status" => {
-                let is_ready = self.engine.read().unwrap().is_some();
-                ToonFormatter::format_status(is_ready, Some(".project-map/latest/.project-map.json"))
+                let (is_ready, tree, active_features) = if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let paths = engine.get_all_file_paths();
+                    let tree = render_tree(&paths, 3);
+                    
+                    let mut active = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir("projects/active") {
+                        for entry in entries.flatten() {
+                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                active.push(entry.file_name().to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                    (true, Some(tree), active)
+                } else {
+                    (false, None, Vec::new())
+                };
+
+                ToonFormatter::format_status(is_ready, Some(".project-map/latest/.project-map.json"), tree.as_deref(), &active_features)
             }
             "pm_query" => {
                 let args: PmQueryTool = serde_json::from_value(arguments)
@@ -202,8 +221,11 @@ impl ServerHandler for McpServerHandler {
                     } else if let Some(p) = args.path {
                         let symbols = engine.get_file_outline(&p);
                         ToonFormatter::format_file_context(&p, &symbols)
+                    } else if let Some(f) = args.filename {
+                        let matches = engine.find_files(&f);
+                        ToonFormatter::format_file_matches(&f, &matches)
                     } else {
-                        "Error: Provide query or path".to_string()
+                        "Error: Provide query, path, or filename".to_string()
                     }
                 } else {
                     "Error: Index not loaded".to_string()

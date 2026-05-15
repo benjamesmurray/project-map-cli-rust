@@ -24,10 +24,12 @@ pub enum Commands {
         #[arg(short, long, default_value = ".project-map")]
         out: String,
     },
-    /// Find a symbol across the codebase
+    /// Find a symbol or file across the codebase
     Find {
         #[arg(short, long)]
-        query: String,
+        query: Option<String>,
+        #[arg(short, long)]
+        file: Option<String>,
         #[arg(short, long, default_value = ".project-map")]
         index: String,
     },

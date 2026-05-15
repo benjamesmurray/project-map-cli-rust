@@ -4,6 +4,7 @@ use project_map_cli_rust::error::Result;
 use project_map_cli_rust::core::orchestrator::Orchestrator;
 use project_map_cli_rust::core::query_engine::QueryEngine;
 use project_map_cli_rust::core::toon::ToonFormatter;
+use project_map_cli_rust::core::utils::render_tree;
 use project_map_cli_rust::mcp::server::McpServer;
 
 #[tokio::main]
@@ -23,10 +24,17 @@ async fn main() -> Result<()> {
             orch.save_index_versioned(std::path::Path::new(&out))?;
             println!("Index saved and versioned in {}", out);
         }
-        Commands::Find { query, index } => {
+        Commands::Find { query, file, index } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;
-            let matches = engine.find_symbols(&query);
-            println!("{}", ToonFormatter::format_symbols(&query, &matches));
+            if let Some(q) = query {
+                let matches = engine.find_symbols(&q);
+                println!("{}", ToonFormatter::format_symbols(&q, &matches));
+            } else if let Some(f) = file {
+                let matches = engine.find_files(&f);
+                println!("{}", ToonFormatter::format_file_matches(&f, &matches));
+            } else {
+                println!("Error: Provide --query or --file");
+            }
         }
         Commands::Context { path, index } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;
@@ -41,7 +49,27 @@ async fn main() -> Result<()> {
         Commands::Status { index } => {
             let path = get_index_path(&index);
             let is_ready = path.exists();
-            println!("{}", ToonFormatter::format_status(is_ready, path.to_str()));
+            let (tree, active_features) = if is_ready {
+                if let Ok(engine) = QueryEngine::load(&path) {
+                    let paths = engine.get_all_file_paths();
+                    let tree = render_tree(&paths, 3);
+                    
+                    let mut active = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir("projects/active") {
+                        for entry in entries.flatten() {
+                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                active.push(entry.file_name().to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                    (Some(tree), active)
+                } else {
+                    (None, Vec::new())
+                }
+            } else {
+                (None, Vec::new())
+            };
+            println!("{}", ToonFormatter::format_status(is_ready, path.to_str(), tree.as_deref(), &active_features));
         }
         Commands::Fetch { path, symbol, index } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;

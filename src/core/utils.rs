@@ -48,6 +48,53 @@ pub fn resolve_import_path(current_file: &str, import_specifier: &str) -> String
     resolved.to_string_lossy().to_string()
 }
 
+pub fn render_tree(paths: &[String], max_depth: usize) -> String {
+    use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct TreeNode {
+        children: BTreeMap<String, TreeNode>,
+    }
+
+    let mut root = TreeNode::default();
+    for path_str in paths {
+        let path = Path::new(path_str);
+        let mut current = &mut root;
+        for component in path.components() {
+            let name = component.as_os_str().to_string_lossy().into_owned();
+            current = current.children.entry(name).or_default();
+        }
+    }
+
+    fn render_node(node: &TreeNode, name: &str, prefix: &str, is_last: bool, depth: usize, max_depth: usize) -> String {
+        if depth > max_depth {
+            return "".to_string();
+        }
+
+        let mut output = String::new();
+        if !name.is_empty() {
+            let marker = if is_last { "└── " } else { "├── " };
+            output.push_str(&format!("{}{}{}\n", prefix, marker, name));
+        }
+
+        let new_prefix = if name.is_empty() {
+            "".to_string()
+        } else {
+            format!("{}{}", prefix, if is_last { "    " } else { "│   " })
+        };
+
+        let child_count = node.children.len();
+        for (i, (child_name, child_node)) in node.children.iter().enumerate() {
+            let is_child_last = i == child_count - 1;
+            output.push_str(&render_node(child_node, child_name, &new_prefix, is_child_last, depth + 1, max_depth));
+        }
+
+        output
+    }
+
+    render_node(&root, "", "", true, 0, max_depth)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

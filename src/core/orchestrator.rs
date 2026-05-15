@@ -39,7 +39,7 @@ impl Orchestrator {
             let path = entry.path();
             if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
                 let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "sql" || extension == "vue" || extension == "md" {
+                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "sql" || extension == "vue" || extension == "md" || extension == "json" || extension == "toml" || extension == "yaml" || extension == "yml" {
                     match self.parser.parse_file(path) {
                         Ok(outline) => {
                             let fqn = path_to_fqn(root, path);
