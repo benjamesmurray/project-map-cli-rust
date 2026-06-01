@@ -6,6 +6,33 @@ use crate::core::graph::{ProjectGraph, NodeData, NodeType, EdgeType};
 use crate::core::utils::{path_to_fqn, resolve_import_path};
 use crate::error::Result;
 
+#[cfg(unix)]
+use std::os::unix::fs::symlink as sys_symlink;
+
+#[cfg(windows)]
+fn sys_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io::Result<()> {
+    let original_path = original.as_ref();
+    let link_path = link.as_ref();
+    
+    // For relative symlinks, we need to check if the target is a directory
+    // relative to the link's parent directory for the is_dir() check to be accurate.
+    let actual_target = if original_path.is_relative() {
+        if let Some(parent) = link_path.parent() {
+            parent.join(original_path)
+        } else {
+            original_path.to_path_buf()
+        }
+    } else {
+        original_path.to_path_buf()
+    };
+
+    if actual_target.is_dir() {
+        std::os::windows::fs::symlink_dir(original, link)
+    } else {
+        std::os::windows::fs::symlink_file(original, link)
+    }
+}
+
 pub struct Orchestrator {
     parser: CodeParser,
     graph: ProjectGraph,
@@ -162,7 +189,6 @@ impl Orchestrator {
     pub fn save_index_versioned(&self, base_dir: &Path) -> Result<()> {
         use chrono::Local;
         use std::fs;
-        use std::os::unix::fs::symlink;
 
         let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
         let backups_dir = base_dir.join("backups");
@@ -190,17 +216,16 @@ impl Orchestrator {
             fs::remove_dir_all(&latest_link).ok();
         }
 
-        // On Unix, use a symlink. 
-        #[cfg(unix)]
-        {
-            // We want the symlink to be relative so it's portable
-            let rel_target = Path::new("backups").join(&timestamp);
-            symlink(rel_target, &latest_link)?;
-        }
+        // Try to use a symlink for the "latest" pointer
+        let rel_target = Path::new("backups").join(&timestamp);
+        
+        #[cfg(any(unix, windows))]
+        let symlink_result = sys_symlink(&rel_target, &latest_link);
+        #[cfg(not(any(unix, windows)))]
+        let symlink_result: std::io::Result<()> = Err(std::io::Error::new(std::io::ErrorKind::Other, "Unsupported platform"));
 
-        // Fallback for non-Unix or if symlink fails
-        #[cfg(not(unix))]
-        {
+        if symlink_result.is_err() {
+            // Fallback for non-supported platforms or if symlink fails (e.g. Windows without dev mode)
             fs::create_dir_all(&latest_link)?;
             fs::copy(&index_path, latest_link.join(".project-map.json"))?;
         }
