@@ -1,0 +1,7 @@
+services:
+    App\Service\MyService:
+        autowire: true
+        autoconfigure: true
+
+    App\Controller\DefaultController:
+        tags: ['controller.service_arguments']

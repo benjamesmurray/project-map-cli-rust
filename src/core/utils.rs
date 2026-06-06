@@ -6,7 +6,7 @@ pub fn path_to_fqn(root: &Path, path: &Path) -> String {
     
     for component in rel.components() {
         let part = component.as_os_str().to_string_lossy();
-        if part == "__init__.py" || part == "mod.rs" || part == "lib.rs" || part == "index.ts" || part == "index.tsx" {
+        if part == "__init__.py" || part == "mod.rs" || part == "lib.rs" || part == "index.ts" || part == "index.tsx" || part == "init.lua" {
             continue;
         }
         let clean_part = part.trim_end_matches(".py")
@@ -14,6 +14,10 @@ pub fn path_to_fqn(root: &Path, path: &Path) -> String {
             .trim_end_matches(".tsx")
             .trim_end_matches(".ts")
             .trim_end_matches(".kt")
+            .trim_end_matches(".lua")
+            .trim_end_matches(".php")
+            .trim_end_matches(".tf")
+            .trim_end_matches(".gd")
             .trim_end_matches(".sql")
             .trim_end_matches(".vue")
             .trim_end_matches(".md");

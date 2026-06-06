@@ -5,8 +5,11 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
 ## 🚀 Features
 - **Agent-Native TOON Output:** Standardized "Token-Oriented Object Notation" presentation layer designed specifically for LLM context efficiency and readability.
 - **Multi-Language AST Parsing:** Powered by Tree-sitter for high-fidelity symbol extraction.
-  - Supported: **Rust, Python, TypeScript/TSX, Kotlin, SQL, Vue 3**.
+  - Supported: **Rust, Python, TypeScript/TSX, Kotlin, SQL, Vue 3, Lua, PHP (Symfony), Terraform, GDScript**.
   - **Modern TypeScript:** Robust support for Arrow Functions, Enums, Interfaces, and Re-exports.
+  - **PHP & Symfony:** Deep support for PSR-4 namespaces, Symfony Routing Attributes, and YAML-based service configuration.
+  - **Terraform:** Extraction of Resources, Modules, Variables, and Data sources, with module-level dependency mapping.
+  - **GDScript (Godot):** Support for `class_name`, `signal`, and `function` definitions. Cross-file mapping handles Godot's `res://` path prefix for `preload`, `load`, and `extends`.
   - **Semantic Docstring Search:** Comments and JSDoc/KDoc are indexed and associated with their respective symbols, allowing you to search by architectural intent.
 - **Architectural Discovery:**
   - `find`: Fast substring search for symbols across the monorepo.

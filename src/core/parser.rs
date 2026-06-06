@@ -45,14 +45,18 @@ impl CodeParser {
             "ts" => ("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
             "tsx" => ("typescript", tree_sitter_typescript::LANGUAGE_TSX.into()),
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
+            "lua" => ("lua", tree_sitter_lua::LANGUAGE.into()),
+            "php" => ("php", tree_sitter_php::LANGUAGE_PHP.into()),
+            "tf" => ("hcl", tree_sitter_hcl::LANGUAGE.into()),
+            "gd" => ("gdscript", tree_sitter_gdscript::LANGUAGE.into()),
+            "yaml" | "yml" => ("yaml", tree_sitter_yaml::LANGUAGE.into()),
             "sql" => ("sql", tree_sitter_sequel::LANGUAGE.into()),
             "vue" => ("vue", tree_sitter_vue_updated::language().into()),
-            "md" | "json" | "toml" | "yaml" | "yml" => {
+            "md" | "json" | "toml" => {
                 let lang = match extension {
                     "md" => "markdown",
                     "json" => "json",
                     "toml" => "toml",
-                    "yaml" | "yml" => "yaml",
                     _ => "text",
                 };
                 return Ok(FileOutline {
@@ -107,6 +111,47 @@ impl CodeParser {
                          (import (qualified_identifier) @import)
                          (line_comment) @doc
                          (block_comment) @doc",
+            "lua" => "((function_declaration name: (_) @name) @function)
+                         (function_call name: (identifier) @func_name arguments: (arguments (string content: (_) @import)) (#eq? @func_name \"require\"))
+                         (comment) @doc",
+            "php" => "((class_declaration name: (name) @name) @class)
+                         ((interface_declaration name: (name) @name) @interface)
+                         ((trait_declaration name: (name) @name) @trait)
+                         ((method_declaration name: (name) @name) @function)
+                         ((function_definition name: (name) @name) @function)
+                         (namespace_use_clause [(name) (qualified_name)] @import)
+                         (comment) @doc
+                         (attribute_list) @doc",
+            "hcl" => "(block 
+                         (identifier) @kind (#match? @kind \"^(resource|data)$\")
+                         (string_lit (template_literal) @name1)
+                         (string_lit (template_literal) @name2)
+                      ) @symbol
+                      (block 
+                         (identifier) @kind (#match? @kind \"^(module|variable|output)$\")
+                         (string_lit (template_literal) @name1)
+                      ) @symbol
+                      (block 
+                         (identifier) @kind (#eq? @kind \"module\")
+                         (body 
+                            (attribute 
+                               (identifier) @attr (#eq? @attr \"source\")
+                               (expression (literal_value (string_lit (template_literal) @import)))
+                            )
+                         )
+                      )
+                      (comment) @doc",
+            "gdscript" => "((class_definition name: (name) @name) @class)
+                         ((class_name_statement name: (name) @name) @class)
+                         ((function_definition name: (name) @name) @function)
+                         ((signal_statement name: (name) @name) @signal)
+                         (extends_statement (string) @import)
+                         (call
+                            (identifier) @func (#match? @func \"^(preload|load)$\")
+                            arguments: (arguments (string) @import)
+                         )
+                         (comment) @doc",
+            "yaml" => "((block_mapping_pair key: (_) @name) @config)",
             "sql" => "((identifier) @name) @symbol",
             "vue" => "((tag_name) @name) @component",
             _ => unreachable!(),
@@ -134,9 +179,16 @@ impl CodeParser {
             for capture in m.captures {
                 let capture_name = query.capture_names()[capture.index as usize].to_string();
                 if capture_name == "import" {
-                    let imp = capture.node.utf8_text(content.as_bytes())
+                    let mut imp = capture.node.utf8_text(content.as_bytes())
                         .unwrap_or("")
                         .to_string();
+                    if language == "php" {
+                        imp = imp.replace("\\", ".");
+                    }
+                    if language == "gdscript" {
+                        imp = imp.replace("res://", "");
+                        imp = imp.trim_matches('"').trim_matches('\'').to_string();
+                    }
                     if !imp.is_empty() {
                         imports.push(imp);
                     }
@@ -152,12 +204,23 @@ impl CodeParser {
                     raw_docs.push((capture.node.start_position().row + 1, capture.node.start_byte(), capture.node.end_byte(), text.to_string()));
                     is_doc = true;
                     break;
-                } else if capture_name == "name" {
-                    name = capture.node.utf8_text(content.as_bytes())
+                } else if capture_name.starts_with("name") {
+                    let part = capture.node.utf8_text(content.as_bytes())
                         .unwrap_or("unknown")
                         .to_string();
+                    if name.is_empty() {
+                        name = part;
+                    } else {
+                        name = format!("{}.{}", name, part);
+                    }
                 } else {
-                    kind = capture_name;
+                    if capture_name == "kind" {
+                        kind = capture.node.utf8_text(content.as_bytes())
+                            .unwrap_or("unknown")
+                            .to_string();
+                    } else {
+                        kind = capture_name;
+                    }
                     line = capture.node.start_position().row + 1;
                     start_byte = capture.node.start_byte();
                     end_byte = capture.node.end_byte();
@@ -203,8 +266,8 @@ impl CodeParser {
             }
         }
 
-        // Final filtering: remove noisy variables
-        symbols.retain(|s| s.kind != "variable" || s.docstring.is_some());
+        // Final filtering: remove noisy variables (except for HCL where they are top-level constructs)
+        symbols.retain(|s| (s.kind != "variable" || s.docstring.is_some()) || language == "hcl");
 
         // For Vue, always add a component symbol based on the filename
         if language == "vue" {

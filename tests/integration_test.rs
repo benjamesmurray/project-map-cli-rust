@@ -197,3 +197,143 @@ fn test_vue_support() {
 
     std::fs::remove_file(out).ok();
 }
+
+#[test]
+fn test_lua_support() {
+    let root = Path::new("tests/fixtures/lua");
+    let out = Path::new("tests/test-lua-index.json");
+    
+    let mut orch = Orchestrator::new();
+    orch.build_index(root).expect("Failed to build index");
+    orch.save_index(out).expect("Failed to save index");
+    
+    let engine = QueryEngine::load(out).expect("Failed to load index");
+    
+    // 1. Check Symbols
+    let add_fn = engine.find_symbols("add");
+    assert!(!add_fn.is_empty(), "Should find add function");
+    assert_eq!(add_fn[0].kind, "function");
+    assert!(add_fn[0].docstring.as_ref().unwrap().contains("Adds two numbers"));
+
+    let sub_fn = engine.find_symbols("subtract");
+    assert!(!sub_fn.is_empty(), "Should find subtract function");
+    assert_eq!(sub_fn[0].kind, "function");
+
+    // 2. Check Imports/Blast Radius
+    // module_a.lua requires "module_b"
+    // The relative path in the index will be tests/fixtures/lua/module_b.lua
+    let blast = engine.check_blast_radius("tests/fixtures/lua/module_b.lua", "");
+    let found_a = blast.iter().any(|n| n.path.contains("module_a.lua"));
+    assert!(found_a, "Blast radius of module_b.lua should include module_a.lua");
+
+    std::fs::remove_file(out).ok();
+}
+
+#[test]
+fn test_php_symfony_support() {
+    let root = Path::new("tests/fixtures/php_symfony");
+    let out = Path::new("tests/test-php-index.json");
+    
+    let mut orch = Orchestrator::new();
+    orch.build_index(root).expect("Failed to build index");
+    orch.save_index(out).expect("Failed to save index");
+    
+    let engine = QueryEngine::load(out).expect("Failed to load index");
+    
+    // 1. Check PHP Symbols
+    let controller = engine.find_symbols("DefaultController");
+    assert!(!controller.is_empty(), "Should find DefaultController class");
+    // Ensure DefaultController is correctly identified as a class
+    assert!(controller.iter().any(|s| s.kind == "class"), "Should find DefaultController as a class");
+    
+    let index_fn = engine.find_symbols("index");
+    assert!(!index_fn.is_empty(), "Should find index method");
+    assert_eq!(index_fn[0].kind, "function");
+    
+    // Check if attributes/annotations are in docstring
+    assert!(index_fn[0].docstring.as_ref().unwrap().contains("Route"), "Docstring should contain Route attribute/annotation");
+
+    // 2. Check YAML Symbols
+    let service_config = engine.find_symbols("App\\Service\\MyService");
+    assert!(!service_config.is_empty(), "Should find service configuration in YAML");
+    assert_eq!(service_config[0].kind, "config");
+
+    // 3. Check Blast Radius via 'use' statement
+    // DefaultController.php uses App\Service\MyService
+    let blast = engine.check_blast_radius("tests/fixtures/php_symfony/src/Service/MyService.php", "");
+    let found_controller = blast.iter().any(|n| n.path.contains("DefaultController.php"));
+    assert!(found_controller, "Blast radius of MyService.php should include DefaultController.php via 'use' statement");
+
+    std::fs::remove_file(out).ok();
+}
+
+#[test]
+fn test_terraform_support() {
+    let root = Path::new("tests/fixtures/terraform");
+    let out = Path::new("tests/test-tf-index.json");
+    
+    let mut orch = Orchestrator::new();
+    orch.build_index(root).expect("Failed to build index");
+    orch.save_index(out).expect("Failed to save index");
+    
+    let engine = QueryEngine::load(out).expect("Failed to load index");
+    
+    // 1. Check Symbols
+    let instance = engine.find_symbols("aws_instance.web");
+    assert!(!instance.is_empty(), "Should find aws_instance.web resource");
+    assert_eq!(instance[0].kind, "resource");
+    
+    let region_var = engine.find_symbols("region");
+    assert!(!region_var.is_empty(), "Should find region variable");
+    assert_eq!(region_var[0].kind, "variable");
+
+    let network_mod = engine.find_symbols("network");
+    assert!(!network_mod.is_empty(), "Should find network module");
+    assert_eq!(network_mod[0].kind, "module");
+
+    // 2. Check Module Dependencies / Blast Radius
+    // main.tf uses module 'network' with source './modules/network'
+    // The relative path indexed will be tests/fixtures/terraform/modules/network/main.tf
+    let blast = engine.check_blast_radius("tests/fixtures/terraform/modules/network/main.tf", "");
+    let found_main = blast.iter().any(|n| n.path.contains("main.tf"));
+    assert!(found_main, "Blast radius of network module should include main.tf");
+
+    std::fs::remove_file(out).ok();
+}
+
+#[test]
+fn test_gdscript_support() {
+    let root = Path::new("tests/fixtures/gdscript");
+    let out = Path::new("tests/test-gd-index.json");
+    
+    let mut orch = Orchestrator::new();
+    orch.build_index(root).expect("Failed to build index");
+    orch.save_index(out).expect("Failed to save index");
+    
+    let engine = QueryEngine::load(out).expect("Failed to load index");
+    
+    // 1. Check Symbols
+    let player_class = engine.find_symbols("Player");
+    assert!(!player_class.is_empty(), "Should find Player class");
+    assert_eq!(player_class[0].kind, "class");
+    
+    let signal_sym = engine.find_symbols("health_changed");
+    assert!(!signal_sym.is_empty(), "Should find health_changed signal");
+    assert_eq!(signal_sym[0].kind, "signal");
+
+    let func_sym = engine.find_symbols("take_damage");
+    assert!(!func_sym.is_empty(), "Should find take_damage function");
+    assert_eq!(func_sym[0].kind, "function");
+
+    // 2. Check Module Dependencies / Blast Radius via res:// and extends
+    // player.gd preloads weapon.gd and extends item.gd
+    let blast_weapon = engine.check_blast_radius("tests/fixtures/gdscript/weapon.gd", "");
+    let found_player_w = blast_weapon.iter().any(|n| n.path.contains("player.gd"));
+    assert!(found_player_w, "Blast radius of weapon.gd should include player.gd");
+
+    let blast_item = engine.check_blast_radius("tests/fixtures/gdscript/item.gd", "");
+    let found_player_i = blast_item.iter().any(|n| n.path.contains("player.gd"));
+    assert!(found_player_i, "Blast radius of item.gd should include player.gd");
+
+    std::fs::remove_file(out).ok();
+}

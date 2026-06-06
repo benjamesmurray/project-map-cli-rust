@@ -66,7 +66,7 @@ impl Orchestrator {
             let path = entry.path();
             if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
                 let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "sql" || extension == "vue" || extension == "md" || extension == "json" || extension == "toml" || extension == "yaml" || extension == "yml" {
+                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "lua" || extension == "php" || extension == "tf" || extension == "gd" || extension == "sql" || extension == "vue" || extension == "md" || extension == "json" || extension == "toml" || extension == "yaml" || extension == "yml" {
                     match self.parser.parse_file(path) {
                         Ok(outline) => {
                             let fqn = path_to_fqn(root, path);
@@ -120,9 +120,9 @@ impl Orchestrator {
                         // Strategy 2: Relative Path Resolution (TypeScript)
                         let resolved_rel = resolve_import_path(&outline.path, &imp);
                         
-                        // Try matching resolved path with common TS extensions
+                        // Try matching resolved path with common TS/Terraform extensions
                         let mut found = false;
-                        for ext in &["", ".ts", ".tsx", "/index.ts", "/index.tsx"] {
+                        for ext in &["", ".ts", ".tsx", "/index.ts", "/index.tsx", "/main.tf"] {
                             let candidate = format!("{}{}", resolved_rel, ext);
                             if let Some(&to_node) = path_to_node.get(&candidate) {
                                 self.graph.add_edge(from_node, to_node, EdgeType::Imports);
@@ -134,7 +134,7 @@ impl Orchestrator {
                         // Strategy 3: FQN Suffix match (Fallback)
                         if !found {
                             let matching_fqn = fqn_to_node.keys()
-                                .find(|&k| k.ends_with(&imp));
+                                .find(|&k| k.ends_with(&imp) || imp.ends_with(k) || (k.contains('.') && imp.contains('.') && k.split('.').last() == imp.split('.').last() && k.split('.').rev().nth(1) == imp.split('.').rev().nth(1)));
                             if let Some(key) = matching_fqn {
                                 let &to_node = fqn_to_node.get(key).unwrap();
                                 self.graph.add_edge(from_node, to_node, EdgeType::Imports);
