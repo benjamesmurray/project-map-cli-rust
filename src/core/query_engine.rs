@@ -141,4 +141,27 @@ impl QueryEngine {
             .map(|n| n.path.clone())
             .collect()
     }
+
+    pub fn get_symbol_count(&self) -> usize {
+        self.graph.graph.node_weights()
+            .filter(|n| n.node_type == NodeType::Symbol)
+            .count()
+    }
+
+    pub fn get_file_count(&self) -> usize {
+        self.graph.graph.node_weights()
+            .filter(|n| n.node_type == NodeType::File)
+            .count()
+    }
+
+    pub fn get_last_indexed_time(path: &Path) -> Option<String> {
+        if let Ok(metadata) = std::fs::metadata(path) {
+            if let Ok(modified) = metadata.modified() {
+                let datetime: chrono::DateTime<chrono::Utc> = modified.into();
+                return Some(datetime.to_rfc3339());
+            }
+        }
+        None
+    }
 }
+

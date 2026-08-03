@@ -1,6 +1,6 @@
 [package]
 name = "project-map-cli-rust"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 description = "High-performance architectural map generator for AI agents and developers."
 license = "MIT"
@@ -38,3 +38,7 @@ async-trait = "0.1"
 schemars = "0.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+notify = "6.1"
+crossbeam-channel = "0.5"
+
+

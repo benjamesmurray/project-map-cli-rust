@@ -24,14 +24,21 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
   - **Custom Index Paths:** Use `--out` and `--index` to manage maps for external projects without cluttering source directories.
   - Rotating backups: Automatically maintains the **5 most recent builds** to save space.
   - Consistent `latest/` symlink for stable integration.
-- **MCP Server:** Built-in Model Context Protocol server exposing a suite of tools for deep codebase interaction. Powered by `rust-mcp-sdk` for fully type-safe compliance with the `2024-11-05` protocol.
-  - `pm_status`: Returns current workspace context and available commands.
-  - `pm_query`: Search for symbols or get file context.
-  - `pm_check_blast_radius`: Identifies all components and files that depend on or import a specific symbol.
-  - `pm_plan`: Analyze the architectural impact (fan-out) of a symbol before starting a refactor.
-  - `pm_semantic_search`: Search for logic using natural language keywords (e.g., 'auth', 'database').
-  - `pm_fetch_symbol`: Extract raw source code for a specific class or function.
-  - `pm_init`: Refresh the map index after significant code changes to maintain discovery accuracy.
+- **MCP Server & Auto-Discovery:** Built-in Model Context Protocol server exposing readable resources for startup auto-discovery and standard tools for codebase interaction. Powered by `rust-mcp-sdk`.
+  - **MCP Resources:**
+    - `project-map://status`: Instant JSON workspace status, symbol count, file count, and last-indexed timestamp.
+    - `project-map://tree`: ASCII directory tree visualization and architectural pulse.
+  - **MCP Tools:**
+    - `status`: Workspace context and command overview.
+    - `query`: Search for symbols or file outlines.
+    - `blast_radius`: Identifies all components and files that depend on or import a specific symbol.
+    - `plan`: Analyze the architectural impact (fan-out) of a symbol.
+    - `search`: Search for logic using natural language keywords (e.g., 'auth', 'database').
+    - `fetch_symbol`: Extract raw source code for a specific class or function.
+    - `init`: Refresh the map index after significant code changes.
+- **Background File-System Watcher:**
+  - `project-map watch`: Incremental auto-indexing background daemon using `notify`. Automatically re-indexes changed files with debouncing while ignoring `.project-map`, `.git`, and `target` directories.
+  - `project-map mcp --watch`: Start the MCP server with automatic background file watching enabled.
 
 ## 🛠 Installation
 
@@ -72,13 +79,21 @@ Extract just the code you need.
 project-map fetch --path "src/main.rs" --symbol "main"
 ```
 
-### 5. Start MCP Server
-Connect to Claude, Gemini, or other agents.
+### 5. Start MCP Server & Background Watching
+Connect to Claude, Gemini, opencode, or other agents.
 ```bash
+# Standard MCP server
 project-map mcp
+
+# Start MCP server with background file watching enabled
+project-map mcp --watch
+
+# Standalone background file watcher
+project-map watch --root .
 ```
 
 ## 📂 Storage Structure
+
 The tool maintains state in the `.project-map/` directory (or your custom `--out` directory):
 - `latest/`: Symlink to the most recent successful build.
 - `backups/`: Historical snapshots (limited to 5) of the project's architecture.

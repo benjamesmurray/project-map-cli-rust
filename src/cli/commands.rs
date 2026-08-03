@@ -77,5 +77,20 @@ pub enum Commands {
         index: String,
     },
     /// Start the MCP server
-    Mcp,
+    Mcp {
+        #[arg(short, long)]
+        watch: bool,
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        #[arg(short, long, default_value = ".project-map")]
+        out: String,
+    },
+    /// Watch project directory and incrementally re-index on file changes
+    Watch {
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        #[arg(short, long, default_value = ".project-map")]
+        out: String,
+    },
 }
+

@@ -97,11 +97,40 @@ async fn main() -> Result<()> {
             let matches = engine.find_symbols(&query);
             println!("{}", ToonFormatter::format_symbols(&query, &matches));
         }
-        Commands::Mcp => {
+        Commands::Mcp { watch, root, out } => {
             let server = McpServer::new();
+            if watch {
+                let watcher = project_map_cli_rust::core::watcher::ProjectWatcher::new(
+                    std::path::PathBuf::from(&root),
+                    std::path::PathBuf::from(&out),
+                    server.engine(),
+                );
+                watcher.start_in_background()?;
+            }
             server.run().await?;
+        }
+        Commands::Watch { root, out } => {
+            println!("Starting project-map file watcher for {}...", root);
+            let mut orch = Orchestrator::new();
+            let _ = orch.scaffold_if_empty(std::path::Path::new(&root));
+            let _ = orch.build_index(std::path::Path::new(&root));
+            let _ = orch.save_index_versioned(std::path::Path::new(&out));
+
+            let engine = QueryEngine::load(&get_index_path(&out)).ok();
+            let shared_engine = std::sync::Arc::new(std::sync::RwLock::new(engine));
+
+            let watcher = project_map_cli_rust::core::watcher::ProjectWatcher::new(
+                std::path::PathBuf::from(&root),
+                std::path::PathBuf::from(&out),
+                shared_engine,
+            );
+            watcher.start_in_background()?;
+
+            println!("Watching for changes in {}. Press Ctrl+C to exit.", root);
+            tokio::signal::ctrl_c().await.ok();
         }
     }
 
     Ok(())
 }
+

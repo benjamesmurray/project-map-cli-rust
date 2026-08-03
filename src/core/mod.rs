@@ -4,3 +4,5 @@ pub mod orchestrator;
 pub mod query_engine;
 pub mod utils;
 pub mod toon;
+pub mod watcher;
+

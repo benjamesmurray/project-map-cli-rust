@@ -23,18 +23,18 @@ use crate::core::utils::render_tree;
 // --- Tool Definitions ---
 
 #[mcp_tool(
-    name = "pm_status",
+    name = "status",
     description = "Returns current workspace context and available commands."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmStatusTool {}
+pub struct StatusTool {}
 
 #[mcp_tool(
-    name = "pm_query",
+    name = "query",
     description = "Search for symbols or get file context."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmQueryTool {
+pub struct QueryTool {
     /// Search query for symbols
     pub query: Option<String>,
     /// File path to get outline
@@ -44,11 +44,11 @@ pub struct PmQueryTool {
 }
 
 #[mcp_tool(
-    name = "pm_check_blast_radius",
+    name = "blast_radius",
     description = "Identifies all components and files that depend on or import a specific symbol."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmCheckBlastRadiusTool {
+pub struct BlastRadiusTool {
     /// File path where the symbol is defined
     pub path: String,
     /// Symbol name to check
@@ -56,31 +56,31 @@ pub struct PmCheckBlastRadiusTool {
 }
 
 #[mcp_tool(
-    name = "pm_plan",
+    name = "plan",
     description = "Analyze the architectural impact (fan-out) of a symbol before starting a refactor."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmPlanTool {
+pub struct PlanTool {
     /// Symbol name to analyze
     pub symbol: String,
 }
 
 #[mcp_tool(
-    name = "pm_semantic_search",
+    name = "search",
     description = "Search for logic using natural language keywords (e.g., 'auth', 'database')."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmSemanticSearchTool {
+pub struct SearchTool {
     /// Natural language query
     pub query: String,
 }
 
 #[mcp_tool(
-    name = "pm_fetch_symbol",
+    name = "fetch_symbol",
     description = "Extract raw source code for a specific class or function."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmFetchSymbolTool {
+pub struct FetchSymbolTool {
     /// File path
     pub path: String,
     /// Symbol name
@@ -88,11 +88,11 @@ pub struct PmFetchSymbolTool {
 }
 
 #[mcp_tool(
-    name = "pm_init",
+    name = "init",
     description = "Refresh the map index after significant code changes to maintain discovery accuracy."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct PmInitTool {}
+pub struct InitTool {}
 
 // --- Server Implementation ---
 
@@ -108,6 +108,14 @@ impl McpServer {
         }
     }
 
+    pub fn with_engine(engine: Arc<std::sync::RwLock<Option<QueryEngine>>>) -> Self {
+        Self { engine }
+    }
+
+    pub fn engine(&self) -> Arc<std::sync::RwLock<Option<QueryEngine>>> {
+        Arc::clone(&self.engine)
+    }
+
     pub async fn run(&self) -> Result<()> {
         let _ = fmt()
             .with_writer(std::io::stderr)
@@ -117,6 +125,7 @@ impl McpServer {
             protocol_version: ProtocolVersion::V2025_11_25.into(),
             capabilities: ServerCapabilities {
                 tools: Some(ServerCapabilitiesTools { list_changed: None }),
+                resources: Some(rust_mcp_sdk::schema::ServerCapabilitiesResources { subscribe: None, list_changed: None }),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -161,6 +170,12 @@ pub struct McpServerHandler {
     engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
 }
 
+impl McpServerHandler {
+    pub fn new(engine: Arc<std::sync::RwLock<Option<QueryEngine>>>) -> Self {
+        Self { engine }
+    }
+}
+
 #[async_trait]
 impl ServerHandler for McpServerHandler {
     async fn handle_list_tools_request(
@@ -170,15 +185,110 @@ impl ServerHandler for McpServerHandler {
     ) -> std::result::Result<ListToolsResult, RpcError> {
         Ok(ListToolsResult {
             tools: vec![
-                PmStatusTool::tool(),
-                PmQueryTool::tool(),
-                PmCheckBlastRadiusTool::tool(),
-                PmPlanTool::tool(),
-                PmSemanticSearchTool::tool(),
-                PmFetchSymbolTool::tool(),
-                PmInitTool::tool(),
+                StatusTool::tool(),
+                QueryTool::tool(),
+                BlastRadiusTool::tool(),
+                PlanTool::tool(),
+                SearchTool::tool(),
+                FetchSymbolTool::tool(),
+                InitTool::tool(),
             ],
             next_cursor: None,
+            meta: None,
+        })
+    }
+
+    async fn handle_list_resources_request(
+        &self,
+        _params: Option<PaginatedRequestParams>,
+        _runtime: Arc<dyn SdkMcpServer>,
+    ) -> std::result::Result<rust_mcp_sdk::schema::ListResourcesResult, RpcError> {
+        use rust_mcp_sdk::schema::{ListResourcesResult, Resource};
+        let status_res = Resource {
+            uri: "project-map://status".to_string(),
+            name: "Project Map Status".to_string(),
+            title: Some("Project Map Status".to_string()),
+            description: Some("Index status, symbol count, file count, and last indexed timestamp".to_string()),
+            mime_type: Some("application/json".to_string()),
+            icons: vec![],
+            size: None,
+            annotations: None,
+            meta: None,
+        };
+        let tree_res = Resource {
+            uri: "project-map://tree".to_string(),
+            name: "Project Map Tree".to_string(),
+            title: Some("Project Map Tree".to_string()),
+            description: Some("High-level project file structure and architectural pulse".to_string()),
+            mime_type: Some("text/plain".to_string()),
+            icons: vec![],
+            size: None,
+            annotations: None,
+            meta: None,
+        };
+        Ok(ListResourcesResult {
+            resources: vec![status_res, tree_res],
+            next_cursor: None,
+            meta: None,
+        })
+    }
+
+    async fn handle_read_resource_request(
+        &self,
+        params: rust_mcp_sdk::schema::ReadResourceRequestParams,
+        _runtime: Arc<dyn SdkMcpServer>,
+    ) -> std::result::Result<rust_mcp_sdk::schema::ReadResourceResult, RpcError> {
+        use rust_mcp_sdk::schema::{ReadResourceResult, ReadResourceContent, TextResourceContents};
+        let index_path = Path::new(".project-map/latest/.project-map.json");
+        let content = match params.uri.as_str() {
+            "project-map://status" => {
+                let status_json = if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let symbol_count = engine.get_symbol_count();
+                    let file_count = engine.get_file_count();
+                    let last_indexed = QueryEngine::get_last_indexed_time(index_path);
+                    serde_json::json!({
+                        "is_ready": true,
+                        "index_path": index_path.to_string_lossy(),
+                        "symbol_count": symbol_count,
+                        "file_count": file_count,
+                        "last_indexed": last_indexed
+                    })
+                } else {
+                    serde_json::json!({
+                        "is_ready": false,
+                        "index_path": null,
+                        "symbol_count": 0,
+                        "file_count": 0,
+                        "last_indexed": null
+                    })
+                };
+                ReadResourceContent::TextResourceContents(TextResourceContents {
+                    uri: "project-map://status".to_string(),
+                    mime_type: Some("application/json".to_string()),
+                    text: status_json.to_string(),
+                    meta: None,
+                })
+            }
+            "project-map://tree" => {
+                let tree_text = if let Some(ref engine) = *self.engine.read().unwrap() {
+                    let paths = engine.get_all_file_paths();
+                    render_tree(&paths, 3)
+                } else {
+                    "Index not initialized. Run 'project-map init' or pass --watch to build index.".to_string()
+                };
+                ReadResourceContent::TextResourceContents(TextResourceContents {
+                    uri: "project-map://tree".to_string(),
+                    mime_type: Some("text/plain".to_string()),
+                    text: tree_text,
+                    meta: None,
+                })
+            }
+            _ => {
+                return Err(RpcError::invalid_params());
+            }
+        };
+        Ok(ReadResourceResult {
+            contents: vec![content],
             meta: None,
         })
     }
@@ -190,7 +300,7 @@ impl ServerHandler for McpServerHandler {
     ) -> std::result::Result<CallToolResult, CallToolError> {
         let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let text = match params.name.as_str() {
-            "pm_status" => {
+            "status" => {
                 let (is_ready, tree, active_features) = if let Some(ref engine) = *self.engine.read().unwrap() {
                     let paths = engine.get_all_file_paths();
                     let tree = render_tree(&paths, 3);
@@ -210,8 +320,8 @@ impl ServerHandler for McpServerHandler {
 
                 ToonFormatter::format_status(is_ready, Some(".project-map/latest/.project-map.json"), tree.as_deref(), &active_features)
             }
-            "pm_query" => {
-                let args: PmQueryTool = serde_json::from_value(arguments)
+            "query" => {
+                let args: QueryTool = serde_json::from_value(arguments)
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
@@ -231,8 +341,8 @@ impl ServerHandler for McpServerHandler {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "pm_check_blast_radius" => {
-                let args: PmCheckBlastRadiusTool = serde_json::from_value(arguments)
+            "blast_radius" => {
+                let args: BlastRadiusTool = serde_json::from_value(arguments)
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
@@ -242,8 +352,8 @@ impl ServerHandler for McpServerHandler {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "pm_plan" => {
-                let args: PmPlanTool = serde_json::from_value(arguments)
+            "plan" => {
+                let args: PlanTool = serde_json::from_value(arguments)
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
@@ -253,8 +363,8 @@ impl ServerHandler for McpServerHandler {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "pm_semantic_search" => {
-                let args: PmSemanticSearchTool = serde_json::from_value(arguments)
+            "search" => {
+                let args: SearchTool = serde_json::from_value(arguments)
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
@@ -264,8 +374,8 @@ impl ServerHandler for McpServerHandler {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "pm_fetch_symbol" => {
-                let args: PmFetchSymbolTool = serde_json::from_value(arguments)
+            "fetch_symbol" => {
+                let args: FetchSymbolTool = serde_json::from_value(arguments)
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
@@ -288,7 +398,7 @@ impl ServerHandler for McpServerHandler {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "pm_init" => {
+            "init" => {
                 let mut orch = Orchestrator::new();
                 let _ = orch.scaffold_if_empty(Path::new("."));
                 if orch.build_index(Path::new(".")).is_ok() && orch.save_index_versioned(Path::new(".project-map")).is_ok() {
@@ -306,3 +416,4 @@ impl ServerHandler for McpServerHandler {
         Ok(CallToolResult::text_content(vec![text.into()]))
     }
 }
+
