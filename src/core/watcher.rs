@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::time::sleep;
+use ignore::WalkBuilder;
 use crate::core::orchestrator::Orchestrator;
 use crate::core::query_engine::QueryEngine;
 use crate::error::Result;
@@ -30,15 +31,47 @@ impl ProjectWatcher {
             notify::Config::default(),
         ).map_err(|e| crate::error::AppError::Generic(format!("Watcher creation error: {}", e)))?;
 
-        watcher.watch(&self.root, RecursiveMode::Recursive)
-            .map_err(|e| crate::error::AppError::Generic(format!("Watcher watch error: {}", e)))?;
+        // 1. Register watches for non-ignored readable directories using ignore::WalkBuilder
+        let walker = WalkBuilder::new(&self.root)
+            .filter_entry(|e| {
+                let name = e.file_name();
+                name != ".project-map" && name != ".git"
+            })
+            .build();
+
+        let mut registered_count = 0;
+        for entry in walker {
+            match entry {
+                Ok(e) => {
+                    if e.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                        let dir_path = e.path();
+                        if !is_ignored_path(dir_path) {
+                            if let Err(err) = watcher.watch(dir_path, RecursiveMode::NonRecursive) {
+                                if is_permission_denied(&err) {
+                                    tracing::warn!("Skipping unreadable directory {}: {}", dir_path.display(), err);
+                                } else {
+                                    tracing::warn!("Failed to watch directory {}: {}", dir_path.display(), err);
+                                }
+                            } else {
+                                registered_count += 1;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("Skipping unreadable path during directory walk: {}", err);
+                }
+            }
+        }
+
+        tracing::info!("ProjectWatcher registered {} readable directories in {}", registered_count, self.root.display());
 
         let root = self.root.clone();
         let out_dir = self.out_dir.clone();
         let engine = Arc::clone(&self.engine);
 
         tokio::spawn(async move {
-            let _watcher = watcher;
+            let mut watcher = watcher;
             let debounce_duration = Duration::from_millis(500);
 
             loop {
@@ -49,6 +82,19 @@ impl ProjectWatcher {
 
                 let mut received_event = false;
                 if let Ok(Ok(event)) = has_event {
+                    // Automatically register newly created directories
+                    if matches!(event.kind, EventKind::Create(_)) {
+                        for path in &event.paths {
+                            if path.is_dir() && !is_ignored_path(path) {
+                                if let Err(err) = watcher.watch(path, RecursiveMode::NonRecursive) {
+                                    if is_permission_denied(&err) {
+                                        tracing::warn!("Skipping unreadable new directory {}: {}", path.display(), err);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if is_relevant_event(&event) {
                         received_event = true;
                     }
@@ -89,6 +135,23 @@ impl ProjectWatcher {
         Ok(())
     }
 }
+
+pub fn is_permission_denied(err: &notify::Error) -> bool {
+    match &err.kind {
+        notify::ErrorKind::Io(io_err) => {
+            io_err.kind() == std::io::ErrorKind::PermissionDenied || io_err.raw_os_error() == Some(13)
+        }
+        notify::ErrorKind::Generic(msg) => {
+            let lower = msg.to_lowercase();
+            lower.contains("permission denied") || lower.contains("os error 13")
+        }
+        _ => {
+            let msg = err.to_string().to_lowercase();
+            msg.contains("permission denied") || msg.contains("os error 13")
+        }
+    }
+}
+
 
 pub fn is_relevant_event(event: &Event) -> bool {
     match event.kind {
