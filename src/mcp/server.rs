@@ -8,9 +8,9 @@ use rust_mcp_sdk::mcp_server::{server_runtime, McpServerOptions, ServerHandler};
 use rust_mcp_sdk::schema::{
     CallToolRequestParams, CallToolResult, InitializeResult,
     PaginatedRequestParams, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools,
-    Implementation, ProtocolVersion, RpcError,
+    Implementation, ProtocolVersion, RpcError, GenericResult,
 };
-use rust_mcp_sdk::schema::schema_utils::CallToolError;
+use rust_mcp_sdk::schema::schema_utils::{CallToolError, CustomRequest};
 use rust_mcp_sdk::macros::{mcp_tool, JsonSchema};
 use tracing_subscriber::fmt;
 
@@ -178,6 +178,15 @@ impl McpServerHandler {
 
 #[async_trait]
 impl ServerHandler for McpServerHandler {
+    async fn handle_custom_request(
+        &self,
+        _request: CustomRequest,
+        runtime: Arc<dyn SdkMcpServer>,
+    ) -> std::result::Result<GenericResult, RpcError> {
+        let server_info = runtime.server_info().to_owned();
+        Ok(server_info.into())
+    }
+
     async fn handle_list_tools_request(
         &self,
         _params: Option<PaginatedRequestParams>,

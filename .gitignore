@@ -3,3 +3,6 @@
 .env
 **/*.rs.bk
 Cargo.lock
+/temp
+/handover
+/.agents
