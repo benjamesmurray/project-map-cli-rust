@@ -6,3 +6,4 @@ Cargo.lock
 /temp
 /handover
 /.agents
+.spec_last_used

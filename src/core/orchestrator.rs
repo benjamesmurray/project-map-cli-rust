@@ -52,10 +52,16 @@ impl Orchestrator {
         let mut path_to_node = HashMap::new();
 
         // Pass 1: Parse all files and create nodes
-        // WalkBuilder respects .gitignore by default
-        let walk = WalkBuilder::new(root)
-            .filter_entry(|e| e.file_name() != ".project-map")
-            .build();
+        // WalkBuilder respects .gitignore inside root; allow hidden files so .env* is indexed
+        let mut builder = WalkBuilder::new(root);
+        builder.hidden(false)
+            .parents(false)
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                name != ".project-map" && name != ".git" && name != "target" && name != "node_modules"
+            });
+
+        let walk = builder.build();
 
         for result in walk {
             let entry = match result {
@@ -65,8 +71,29 @@ impl Orchestrator {
 
             let path = entry.path();
             if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
                 let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if extension == "py" || extension == "rs" || extension == "ts" || extension == "tsx" || extension == "kt" || extension == "lua" || extension == "php" || extension == "tf" || extension == "gd" || extension == "sql" || extension == "vue" || extension == "md" || extension == "json" || extension == "toml" || extension == "yaml" || extension == "yml" {
+                let is_supported = file_name.starts_with(".env")
+                    || extension == "env"
+                    || matches!(
+                        extension,
+                        "py" | "rs"
+                            | "ts"
+                            | "tsx"
+                            | "kt"
+                            | "lua"
+                            | "php"
+                            | "tf"
+                            | "gd"
+                            | "sql"
+                            | "vue"
+                            | "md"
+                            | "json"
+                            | "toml"
+                            | "yaml"
+                            | "yml"
+                    );
+                if is_supported {
                     match self.parser.parse_file(path) {
                         Ok(outline) => {
                             let fqn = path_to_fqn(root, path);
@@ -79,11 +106,25 @@ impl Orchestrator {
                                 end_byte: 0,
                                 node_type: NodeType::File,
                                 docstring: None,
+                                role: None,
                             });
                             fqn_to_node.insert(fqn, file_node);
                             path_to_node.insert(outline.path.clone(), file_node);
 
                             for symbol in &outline.symbols {
+                                let node_type = match symbol.kind.as_str() {
+                                    "kafka_topic" => NodeType::KafkaTopic,
+                                    "database_table" => NodeType::DatabaseTable,
+                                    "config_env_var" => NodeType::ConfigEnvVar,
+                                    _ => NodeType::Symbol,
+                                };
+                                let edge_type = match symbol.role.as_deref() {
+                                    Some("Producer") => EdgeType::Produces,
+                                    Some("Consumer") => EdgeType::Consumes,
+                                    Some("Configuration") => EdgeType::Configures,
+                                    Some("Reference") => EdgeType::References,
+                                    _ => EdgeType::Contains,
+                                };
                                 let symbol_node = self.graph.add_node(NodeData {
                                     path: outline.path.clone(),
                                     name: symbol.name.clone(),
@@ -91,10 +132,11 @@ impl Orchestrator {
                                     line: symbol.line,
                                     start_byte: symbol.start_byte,
                                     end_byte: symbol.end_byte,
-                                    node_type: NodeType::Symbol,
+                                    node_type,
                                     docstring: symbol.docstring.clone(),
+                                    role: symbol.role.clone(),
                                 });
-                                self.graph.add_edge(file_node, symbol_node, EdgeType::Contains);
+                                self.graph.add_edge(file_node, symbol_node, edge_type);
                             }
                             outlines.push(outline);
                         }

@@ -24,11 +24,11 @@ async fn main() -> Result<()> {
             orch.save_index_versioned(std::path::Path::new(&out))?;
             println!("Index saved and versioned in {}", out);
         }
-        Commands::Find { query, file, index } => {
+        Commands::Find { query, file, index, preview } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;
             if let Some(q) = query {
-                let matches = engine.find_symbols(&q);
-                println!("{}", ToonFormatter::format_symbols(&q, &matches));
+                let matches = engine.find_entities_with_preview(&q, preview);
+                println!("{}", ToonFormatter::format_entity_matches(&q, &matches));
             } else if let Some(f) = file {
                 let matches = engine.find_files(&f);
                 println!("{}", ToonFormatter::format_file_matches(&f, &matches));
@@ -92,10 +92,10 @@ async fn main() -> Result<()> {
             let results = engine.check_blast_radius(&path, &symbol);
             println!("{}", ToonFormatter::format_blast_radius(&path, &symbol, &results));
         }
-        Commands::Search { query, index } => {
+        Commands::Search { query, index, preview } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;
-            let matches = engine.find_symbols(&query);
-            println!("{}", ToonFormatter::format_symbols(&query, &matches));
+            let matches = engine.find_entities_with_preview(&query, preview);
+            println!("{}", ToonFormatter::format_entity_matches(&query, &matches));
         }
         Commands::Mcp { watch, root, out } => {
             let server = McpServer::new();

@@ -32,6 +32,9 @@ pub enum Commands {
         file: Option<String>,
         #[arg(short, long, default_value = ".project-map")]
         index: String,
+        /// Context snippet preview lines (default 3 when flag present)
+        #[arg(short = 'C', long = "preview", num_args = 0..=1, default_missing_value = "3")]
+        preview: Option<usize>,
     },
     /// Get a dense architectural overview of a specific file
     Context {
@@ -75,6 +78,9 @@ pub enum Commands {
         query: String,
         #[arg(short, long, default_value = ".project-map")]
         index: String,
+        /// Context snippet preview lines (default 3 when flag present)
+        #[arg(short = 'C', long = "preview", num_args = 0..=1, default_missing_value = "3")]
+        preview: Option<usize>,
     },
     /// Start the MCP server
     Mcp {

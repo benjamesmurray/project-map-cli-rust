@@ -1,7 +1,8 @@
-use crate::core::graph::{ProjectGraph, NodeData, NodeType};
+use crate::core::graph::{ProjectGraph, NodeData, NodeType, SnippetPreview, EntityMatch};
 use crate::error::Result;
 use petgraph::visit::Dfs;
 use std::path::Path;
+use std::collections::HashMap;
 
 pub struct QueryEngine {
     graph: ProjectGraph,
@@ -25,7 +26,7 @@ impl QueryEngine {
 
         self.graph.graph.node_weights()
             .filter(|n| {
-                if n.node_type != NodeType::Symbol {
+                if n.node_type == NodeType::File {
                     return false;
                 }
                 
@@ -82,7 +83,7 @@ impl QueryEngine {
         let node_idx = self.graph.graph.node_indices()
             .find(|i| {
                 let node = &self.graph.graph[*i];
-                node.path == path && node.name == symbol && node.node_type == NodeType::Symbol
+                node.path == path && node.name == symbol && node.node_type != NodeType::File
             });
         
         let start_node = if let Some(idx) = node_idx {
@@ -121,7 +122,7 @@ impl QueryEngine {
 
     pub fn find_symbol_in_path(&self, path: &str, name: &str) -> Option<NodeData> {
         self.graph.graph.node_weights()
-            .find(|n| n.node_type == NodeType::Symbol && n.path == path && n.name == name)
+            .find(|n| n.node_type != NodeType::File && n.path == path && n.name == name)
             .cloned()
     }
 
@@ -144,7 +145,7 @@ impl QueryEngine {
 
     pub fn get_symbol_count(&self) -> usize {
         self.graph.graph.node_weights()
-            .filter(|n| n.node_type == NodeType::Symbol)
+            .filter(|n| n.node_type != NodeType::File)
             .count()
     }
 
@@ -163,5 +164,121 @@ impl QueryEngine {
         }
         None
     }
+
+    pub fn find_entities_with_preview(&self, query: &str, preview_lines: Option<usize>) -> Vec<EntityMatch> {
+        let nodes = self.find_symbols(query);
+        let mut extractor = SnippetExtractor::new();
+
+        nodes.into_iter().map(|n| {
+            let preview = preview_lines.and_then(|lines| {
+                if n.line > 0 {
+                    extractor.extract(&n.path, n.line, lines)
+                } else {
+                    None
+                }
+            });
+
+            EntityMatch {
+                name: n.name,
+                kind: n.kind,
+                node_type: n.node_type,
+                path: n.path,
+                line: n.line,
+                role: n.role,
+                preview,
+            }
+        }).collect()
+    }
 }
+
+pub struct SnippetExtractor {
+    file_cache: HashMap<String, Vec<String>>,
+}
+
+impl SnippetExtractor {
+    pub fn new() -> Self {
+        Self {
+            file_cache: HashMap::new(),
+        }
+    }
+
+    pub fn extract(&mut self, path: &str, target_line: usize, context_lines: usize) -> Option<SnippetPreview> {
+        let lines = if let Some(cached) = self.file_cache.get(path) {
+            cached.clone()
+        } else {
+            let content = std::fs::read_to_string(path).ok()?;
+            let read_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+            self.file_cache.insert(path.to_string(), read_lines.clone());
+            read_lines
+        };
+
+        if lines.is_empty() || target_line == 0 {
+            return None;
+        }
+
+        let total_lines = lines.len();
+        let target_idx = target_line.saturating_sub(1);
+        if target_idx >= total_lines {
+            return None;
+        }
+
+        let start_idx = target_idx.saturating_sub(context_lines);
+        let end_idx = std::cmp::min(total_lines, target_idx + context_lines + 1);
+
+        let mut snippet_lines = Vec::new();
+        let mut formatted = String::new();
+
+        let lang = Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("text");
+
+        formatted.push_str(&format!("```{lang}\n"));
+        for idx in start_idx..end_idx {
+            let line_num = idx + 1;
+            let line_content = &lines[idx];
+            snippet_lines.push((line_num, line_content.clone()));
+            formatted.push_str(&format!("{:4}: {}\n", line_num, line_content));
+        }
+        formatted.push_str("```");
+
+        Some(SnippetPreview {
+            target_line,
+            start_line: start_idx + 1,
+            end_line: end_idx,
+            lines: snippet_lines,
+            formatted,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snippet_extractor_caching_and_formatting() {
+        let temp_path = std::env::temp_dir().join("test_snippet_sample.rs");
+        let content = "fn one() {}\nfn two() {\n    println!(\"hello\");\n}\nfn three() {}\n";
+        std::fs::write(&temp_path, content).unwrap();
+
+        let mut extractor = SnippetExtractor::new();
+        let preview = extractor.extract(temp_path.to_str().unwrap(), 3, 1).expect("Failed to extract");
+
+        assert_eq!(preview.target_line, 3);
+        assert_eq!(preview.start_line, 2);
+        assert_eq!(preview.end_line, 4);
+        assert!(preview.formatted.contains("```rs"));
+        assert!(preview.formatted.contains("   3:     println!(\"hello\");"));
+
+        // Second extract uses cache
+        let preview2 = extractor.extract(temp_path.to_str().unwrap(), 1, 0).expect("Failed to extract");
+        assert_eq!(preview2.target_line, 1);
+        assert_eq!(preview2.start_line, 1);
+        assert_eq!(preview2.end_line, 1);
+
+        std::fs::remove_file(&temp_path).ok();
+    }
+}
+
 

@@ -1,0 +1,60 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1",
+      "title": "Resilient Data Models & Graph Extensions",
+      "description": "Extend NodeType and EdgeType with new variants and #[serde(other)] Unknown fallback; add deserialization mismatch guard in ProjectGraph::load to trigger clean re-indexing; define SnippetPreview and EntityMatch structures in src/core/graph.rs without serializing snippets into .project-map.json.",
+      "status": "completed",
+      "dependencies": []
+    },
+    {
+      "id": "2",
+      "title": "Entity Extractors for SQL, YAML (serde_yaml), and Env Files",
+      "description": "Implement fast line-by-line split for .env* files, serde_yaml for Docker Compose/YAML configs (extracting environment, KAFKA_TOPIC_*, input-topics, output-topic), and Tree-Sitter sequel for SQL DDL tables in src/core/parser.rs.",
+      "status": "completed",
+      "dependencies": [
+        "1"
+      ]
+    },
+    {
+      "id": "3",
+      "title": "Code Scanners with Concrete Kafka Directional Heuristics",
+      "description": "Implement AST & string scanners in Kotlin, Python, Rust, and TS with concrete heuristics: to/send/produce/output-topic -> Producer; from/subscribe/consume/GlobalKTable/input-topics -> Consumer; fallback -> Reference; plus System.getenv and os.environ detection in src/core/parser.rs.",
+      "status": "completed",
+      "dependencies": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "4",
+      "title": "On-Demand Snippet Extraction & Query Engine",
+      "description": "Implement lazy SnippetExtractor that slices files from disk on-demand with 1-based line numbers and per-session line caching (never stored in index); update QueryEngine and toon.rs to display categorized producers/consumers/config with markdown code blocks.",
+      "status": "completed",
+      "dependencies": [
+        "1",
+        "2",
+        "3"
+      ]
+    },
+    {
+      "id": "5",
+      "title": "CLI Preview Flags & Conforming MCP Payloads",
+      "description": "Add --preview / -C flags to CLI commands in src/cli/commands.rs; format CallToolResult.content with line-numbered markdown code fences and enrich MCP JSON responses with role and preview fields in src/mcp/server.rs.",
+      "status": "completed",
+      "dependencies": [
+        "4"
+      ]
+    },
+    {
+      "id": "6",
+      "title": "Incremental Watcher & Test Suite Verification",
+      "description": "Update watcher in src/core/watcher.rs to monitor .env, .sql, and .yaml files; add test fixtures and integration tests in tests/; verify backwards compatibility and cargo test passing.",
+      "status": "completed",
+      "dependencies": [
+        "5"
+      ]
+    }
+  ]
+}

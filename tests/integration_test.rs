@@ -1,6 +1,7 @@
 use std::path::Path;
 use project_map_cli_rust::core::orchestrator::Orchestrator;
 use project_map_cli_rust::core::query_engine::QueryEngine;
+use project_map_cli_rust::core::toon::ToonFormatter;
 
 #[test]
 fn test_end_to_end_indexing() {
@@ -162,15 +163,15 @@ fn test_sql_support() {
     // 1. Check Symbols
     let users_table = engine.find_symbols("users");
     assert!(!users_table.is_empty(), "Should find users table");
-    assert_eq!(users_table[0].kind, "symbol");
+    assert_eq!(users_table[0].kind, "database_table");
     
     let active_users_view = engine.find_symbols("active_users");
     assert!(!active_users_view.is_empty(), "Should find active_users view");
-    assert_eq!(active_users_view[0].kind, "symbol");
+    assert_eq!(active_users_view[0].kind, "database_table");
     
     let count_fn = engine.find_symbols("get_user_count");
     assert!(!count_fn.is_empty(), "Should find get_user_count function");
-    assert_eq!(count_fn[0].kind, "symbol");
+    assert_eq!(count_fn[0].kind, "function");
 
     std::fs::remove_file(out).ok();
 }
@@ -334,6 +335,47 @@ fn test_gdscript_support() {
     let blast_item = engine.check_blast_radius("tests/fixtures/gdscript/item.gd", "");
     let found_player_i = blast_item.iter().any(|n| n.path.contains("player.gd"));
     assert!(found_player_i, "Blast radius of item.gd should include player.gd");
+
+    std::fs::remove_file(out).ok();
+}
+
+#[test]
+fn test_streaming_and_topic_indexing() {
+    let root = Path::new("tests/fixtures/streaming");
+    let out = Path::new("tests/test-streaming-index.json");
+
+    let mut orch = Orchestrator::new();
+    orch.build_index(root).expect("Failed to build index");
+    orch.save_index(out).expect("Failed to save index");
+
+    let engine = QueryEngine::load(out).expect("Failed to load index");
+
+    // 1. Topic search
+    let matches = engine.find_entities_with_preview("wde.labels.phase.v1", Some(2));
+    assert!(!matches.is_empty(), "Should find wde.labels.phase.v1 topic");
+
+    let producers: Vec<_> = matches.iter().filter(|m| m.role.as_deref() == Some("Producer")).collect();
+    assert!(!producers.is_empty(), "Should find producer for wde.labels.phase.v1");
+    let prod_preview = producers[0].preview.as_ref().expect("Producer should have preview");
+    assert!(prod_preview.formatted.contains("wde.labels.phase.v1"));
+
+    // 2. Database table search
+    let table_matches = engine.find_symbols("public.levels_history");
+    assert!(!table_matches.is_empty(), "Should find public.levels_history table");
+    assert_eq!(table_matches[0].kind, "database_table");
+
+    // 3. Environment variable search
+    let env_matches = engine.find_symbols("DATABASE_URL");
+    assert!(!env_matches.is_empty(), "Should find DATABASE_URL config variable");
+    assert_eq!(env_matches[0].kind, "config_env_var");
+
+    let pass_matches = engine.find_symbols("DB_PASSWORD");
+    assert!(!pass_matches.is_empty(), "Should find DB_PASSWORD");
+
+    // 4. Test ToonFormatter output
+    let output = ToonFormatter::format_entity_matches("wde.labels.phase.v1", &matches);
+    assert!(output.contains("Producers:"));
+    assert!(output.contains("```"));
 
     std::fs::remove_file(out).ok();
 }

@@ -41,6 +41,8 @@ pub struct QueryTool {
     pub path: Option<String>,
     /// Search for filenames across the tree
     pub filename: Option<String>,
+    /// Number of context lines for snippet preview (defaults to 3)
+    pub preview: Option<u32>,
 }
 
 #[mcp_tool(
@@ -73,6 +75,8 @@ pub struct PlanTool {
 pub struct SearchTool {
     /// Natural language query
     pub query: String,
+    /// Number of context lines for snippet preview (defaults to 3)
+    pub preview: Option<u32>,
 }
 
 #[mcp_tool(
@@ -335,8 +339,9 @@ impl ServerHandler for McpServerHandler {
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     if let Some(q) = args.query {
-                        let matches = engine.find_symbols(&q);
-                        ToonFormatter::format_symbols(&q, &matches)
+                        let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
+                        let matches = engine.find_entities_with_preview(&q, preview_lines);
+                        ToonFormatter::format_entity_matches(&q, &matches)
                     } else if let Some(p) = args.path {
                         let symbols = engine.get_file_outline(&p);
                         ToonFormatter::format_file_context(&p, &symbols)
@@ -377,8 +382,9 @@ impl ServerHandler for McpServerHandler {
                     .map_err(|e| CallToolError(Box::new(e)))?;
                 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let matches = engine.find_symbols(&args.query);
-                    ToonFormatter::format_symbols(&args.query, &matches)
+                    let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
+                    let matches = engine.find_entities_with_preview(&args.query, preview_lines);
+                    ToonFormatter::format_entity_matches(&args.query, &matches)
                 } else {
                     "Error: Index not loaded".to_string()
                 }
@@ -391,11 +397,21 @@ impl ServerHandler for McpServerHandler {
                     if let Some(node) = engine.find_symbol_in_path(&args.path, &args.symbol) {
                         if let Ok(content) = std::fs::read_to_string(&node.path) {
                             let bytes = content.as_bytes();
-                            if node.start_byte < bytes.len() && node.end_byte <= bytes.len() {
-                                let content_str = String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]);
+                            let content_str = if node.start_byte < bytes.len() && node.end_byte <= bytes.len() && node.end_byte > node.start_byte {
+                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]).to_string()
+                            } else if node.line > 0 {
+                                let mut extractor = crate::core::query_engine::SnippetExtractor::new();
+                                extractor.extract(&args.path, node.line, 5)
+                                    .map(|p| p.formatted)
+                                    .unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+
+                            if !content_str.is_empty() {
                                 ToonFormatter::format_fetch_result(&args.path, &args.symbol, Some(&content_str))
                             } else {
-                                "Error: Byte range out of bounds".to_string()
+                                "Error: Byte range or line out of bounds".to_string()
                             }
                         } else {
                             "Error: Could not read file".to_string()

@@ -1,4 +1,4 @@
-use crate::core::graph::NodeData;
+use crate::core::graph::{NodeData, NodeType, EntityMatch};
 use std::collections::{HashMap, HashSet};
 
 pub struct ToonFormatter;
@@ -14,6 +14,85 @@ impl ToonFormatter {
         
         if matches.len() > 10 {
             output.push_str(&format!("... and {} more.\n", matches.len() - 10));
+        }
+
+        if let Some(first) = matches.first() {
+            output.push_str(&format!("\nNext Step: `project-map impact --fqn {}`", first.name));
+        }
+
+        output
+    }
+
+    pub fn format_entity_matches(query: &str, matches: &[EntityMatch]) -> String {
+        let mut output = format!("Resource: Symbols | Query: {}\n", query);
+        output.push_str(&format!("Matches Found: {}\n", matches.len()));
+
+        let is_kafka_query = matches.iter().any(|m| m.node_type == NodeType::KafkaTopic);
+
+        if is_kafka_query {
+            let topic_name = matches.iter().find(|m| m.node_type == NodeType::KafkaTopic).map(|m| m.name.as_str()).unwrap_or(query);
+            output.push_str(&format!("\nSymbol: {} [KafkaTopic]\n", topic_name));
+
+            let producers: Vec<_> = matches.iter().filter(|m| m.role.as_deref() == Some("Producer")).collect();
+            let consumers: Vec<_> = matches.iter().filter(|m| m.role.as_deref() == Some("Consumer")).collect();
+            let configs: Vec<_> = matches.iter().filter(|m| m.role.as_deref() == Some("Configuration") || m.role.as_deref() == Some("Definition")).collect();
+            let references: Vec<_> = matches.iter().filter(|m| m.role.as_deref() == Some("Reference") || m.role.is_none()).collect();
+
+            if !producers.is_empty() {
+                output.push_str("\nProducers:\n");
+                for p in producers {
+                    output.push_str(&format!("  • {}:{}\n", p.path, p.line));
+                    if let Some(prev) = &p.preview {
+                        output.push_str(&format!("{}\n", prev.formatted));
+                    }
+                }
+            }
+
+            if !consumers.is_empty() {
+                output.push_str("\nConsumers:\n");
+                for c in consumers {
+                    output.push_str(&format!("  • {}:{}\n", c.path, c.line));
+                    if let Some(prev) = &c.preview {
+                        output.push_str(&format!("{}\n", prev.formatted));
+                    }
+                }
+            }
+
+            if !configs.is_empty() {
+                output.push_str("\nDefinitions & Configuration:\n");
+                for cfg in configs {
+                    output.push_str(&format!("  • {}:{}\n", cfg.path, cfg.line));
+                    if let Some(prev) = &cfg.preview {
+                        output.push_str(&format!("{}\n", prev.formatted));
+                    }
+                }
+            }
+
+            if !references.is_empty() {
+                output.push_str("\nReferences:\n");
+                for r in references {
+                    output.push_str(&format!("  • {}:{}\n", r.path, r.line));
+                    if let Some(prev) = &r.preview {
+                        output.push_str(&format!("{}\n", prev.formatted));
+                    }
+                }
+            }
+        } else {
+            for m in matches.iter().take(10) {
+                output.push_str(&format!("\nMatch: {} [{:?}]\n", m.name, m.node_type));
+                output.push_str(&format!("File: {}:{}\n", m.path, m.line));
+                if let Some(role) = &m.role {
+                    output.push_str(&format!("Role: {}\n", role));
+                }
+                if let Some(prev) = &m.preview {
+                    output.push_str("Context:\n");
+                    output.push_str(&format!("{}\n", prev.formatted));
+                }
+            }
+
+            if matches.len() > 10 {
+                output.push_str(&format!("\n... and {} more matches.\n", matches.len() - 10));
+            }
         }
 
         if let Some(first) = matches.first() {

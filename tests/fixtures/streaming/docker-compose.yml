@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      KAFKA_BROKER_ID: 1
+  labels-processor:
+    environment:
+      - OUTPUT_TOPIC=wde.labels.phase.v1
+      - DB_PASSWORD=secret
+    input-topics:
+      - wde.bars.raw.v5
