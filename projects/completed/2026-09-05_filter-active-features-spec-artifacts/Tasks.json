@@ -1,0 +1,30 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Implement get_active_features helper and unit tests",
+      "description": "Add get_active_features(root: &Path) -> Vec<String> in src/core/utils.rs filtering directories in projects/active that contain Specification.md, Tasks.json, or .deliver_meta.json, with comprehensive unit tests.",
+      "status": "completed",
+      "dependencies": []
+    },
+    {
+      "id": "1.2",
+      "title": "Wire get_active_features into CLI and MCP server",
+      "description": "Refactor src/main.rs and src/mcp/server.rs status handlers to use get_active_features instead of raw directory reading.",
+      "status": "completed",
+      "dependencies": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Version bump, regression testing and release build",
+      "description": "Bump version in Cargo.toml to 0.1.16, run cargo test and cargo build --release to verify entire test suite passes.",
+      "status": "completed",
+      "dependencies": [
+        "1.2"
+      ]
+    }
+  ]
+}

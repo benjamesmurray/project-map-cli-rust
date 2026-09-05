@@ -4,7 +4,7 @@ use project_map_cli_rust::error::Result;
 use project_map_cli_rust::core::orchestrator::Orchestrator;
 use project_map_cli_rust::core::query_engine::QueryEngine;
 use project_map_cli_rust::core::toon::ToonFormatter;
-use project_map_cli_rust::core::utils::render_tree;
+use project_map_cli_rust::core::utils::{render_tree, get_active_features};
 use project_map_cli_rust::mcp::server::McpServer;
 
 #[tokio::main]
@@ -53,15 +53,7 @@ async fn main() -> Result<()> {
                 if let Ok(engine) = QueryEngine::load(&path) {
                     let paths = engine.get_all_file_paths();
                     let tree = render_tree(&paths, 3);
-                    
-                    let mut active = Vec::new();
-                    if let Ok(entries) = std::fs::read_dir("projects/active") {
-                        for entry in entries.flatten() {
-                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                active.push(entry.file_name().to_string_lossy().into_owned());
-                            }
-                        }
-                    }
+                    let active = get_active_features(std::path::Path::new("."));
                     (Some(tree), active)
                 } else {
                     (None, Vec::new())

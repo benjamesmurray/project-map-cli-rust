@@ -18,7 +18,7 @@ use crate::error::Result;
 use crate::core::query_engine::QueryEngine;
 use crate::core::orchestrator::Orchestrator;
 use crate::core::toon::ToonFormatter;
-use crate::core::utils::render_tree;
+use crate::core::utils::{render_tree, get_active_features};
 
 // --- Tool Definitions ---
 
@@ -318,14 +318,7 @@ impl ServerHandler for McpServerHandler {
                     let paths = engine.get_all_file_paths();
                     let tree = render_tree(&paths, 3);
                     
-                    let mut active = Vec::new();
-                    if let Ok(entries) = std::fs::read_dir("projects/active") {
-                        for entry in entries.flatten() {
-                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                active.push(entry.file_name().to_string_lossy().into_owned());
-                            }
-                        }
-                    }
+                    let active = get_active_features(Path::new("."));
                     (true, Some(tree), active)
                 } else {
                     (false, None, Vec::new())

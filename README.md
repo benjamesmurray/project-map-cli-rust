@@ -29,13 +29,15 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
     - `project-map://status`: Instant JSON workspace status, symbol count, file count, and last-indexed timestamp.
     - `project-map://tree`: ASCII directory tree visualization and architectural pulse.
   - **MCP Tools:**
-    - `status`: Workspace context and command overview.
+    - `status`: Workspace context, component tree, and active specification feature discovery (filters only valid features containing `Specification.md`, `Tasks.json`, or `.deliver_meta.json`).
     - `query`: Search for symbols or file outlines.
     - `blast_radius`: Identifies all components and files that depend on or import a specific symbol.
     - `plan`: Analyze the architectural impact (fan-out) of a symbol.
     - `search`: Search for logic using natural language keywords (e.g., 'auth', 'database').
     - `fetch_symbol`: Extract raw source code for a specific class or function.
     - `init`: Refresh the map index after significant code changes.
+- **Specification-Driven Project Pulse:**
+  - Accurately reports active features in `status` (CLI & MCP) by verifying the presence of specification artifacts (`Specification.md`, `Tasks.json`, or `.deliver_meta.json`), preventing empty, leftover, or category directories in `projects/active/` from cluttering reports.
 - **Background File-System Watcher:**
   - `project-map watch`: Incremental auto-indexing background daemon using `notify`. Automatically re-indexes changed files with debouncing while ignoring `.project-map`, `.git`, and `target` directories.
   - `project-map mcp --watch`: Start the MCP server with automatic background file watching enabled.

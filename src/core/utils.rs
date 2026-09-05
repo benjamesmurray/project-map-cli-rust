@@ -99,6 +99,26 @@ pub fn render_tree(paths: &[String], max_depth: usize) -> String {
     render_node(&root, "", "", true, 0, max_depth)
 }
 
+pub fn get_active_features(root: &Path) -> Vec<String> {
+    let mut active = Vec::new();
+    let active_dir = root.join("projects/active");
+    if let Ok(entries) = std::fs::read_dir(active_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let has_spec = path.join("Specification.md").exists()
+                    || path.join("Tasks.json").exists()
+                    || path.join(".deliver_meta.json").exists();
+                if has_spec {
+                    active.push(entry.file_name().to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    active.sort();
+    active
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +150,60 @@ mod tests {
         assert_eq!(resolve_import_path("src/main.ts", "./utils"), "src/utils");
         assert_eq!(resolve_import_path("src/core/parser.ts", "../utils"), "src/utils");
         assert_eq!(resolve_import_path("src/index.ts", "lodash"), "lodash");
+    }
+
+    #[test]
+    fn test_get_active_features() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_active_features_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let active_dir = temp_dir.join("projects").join("active");
+        std::fs::create_dir_all(&active_dir).unwrap();
+
+        // 1. Empty feature directory (should be ignored)
+        std::fs::create_dir_all(active_dir.join("empty_feature")).unwrap();
+
+        // 2. Directory with unrelated file (should be ignored)
+        let other_dir = active_dir.join("unrelated_feature");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        std::fs::write(other_dir.join("random.txt"), "hello").unwrap();
+
+        // 3. Valid feature with Specification.md
+        let spec_dir = active_dir.join("feature_with_spec");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(spec_dir.join("Specification.md"), "# Spec").unwrap();
+
+        // 4. Valid feature with Tasks.json
+        let tasks_dir = active_dir.join("feature_with_tasks");
+        std::fs::create_dir_all(&tasks_dir).unwrap();
+        std::fs::write(tasks_dir.join("Tasks.json"), "{}").unwrap();
+
+        // 5. Valid feature with .deliver_meta.json
+        let meta_dir = active_dir.join("feature_with_meta");
+        std::fs::create_dir_all(&meta_dir).unwrap();
+        std::fs::write(meta_dir.join(".deliver_meta.json"), "{}").unwrap();
+
+        // 6. Regular file in projects/active (should be ignored)
+        std::fs::write(active_dir.join("notes.txt"), "some notes").unwrap();
+
+        let features = get_active_features(&temp_dir);
+        assert_eq!(
+            features,
+            vec!["feature_with_meta", "feature_with_spec", "feature_with_tasks"]
+        );
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_get_active_features_nonexistent_dir() {
+        let nonexistent = Path::new("/path/that/definitely/does/not/exist/ever");
+        let features = get_active_features(nonexistent);
+        assert!(features.is_empty());
     }
 }
