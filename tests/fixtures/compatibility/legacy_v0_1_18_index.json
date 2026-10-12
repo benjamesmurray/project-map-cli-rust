@@ -1,0 +1,27 @@
+{
+  "nodes": [
+    {
+      "path": "./src/server.py",
+      "name": "start_server",
+      "kind": "function",
+      "line": 10,
+      "start_byte": 100,
+      "end_byte": 250,
+      "node_type": "Symbol",
+      "docstring": "Start the API server"
+    },
+    {
+      "path": "./src/server.py",
+      "name": "src/server.py",
+      "kind": "file",
+      "line": 1,
+      "start_byte": 0,
+      "end_byte": 500,
+      "node_type": "File",
+      "docstring": null
+    }
+  ],
+  "edges": [
+    [1, 0, "Contains"]
+  ]
+}

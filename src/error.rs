@@ -8,6 +8,12 @@ pub enum AppError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("Corrupt index at {path:?}: {source}")]
+    CorruptIndex {
+        path: std::path::PathBuf,
+        source: serde_json::Error,
+    },
+
     #[error("Parser error: {0}")]
     Parser(String),
 

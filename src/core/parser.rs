@@ -1,9 +1,9 @@
-use tree_sitter::{Parser, Query, QueryCursor};
-use streaming_iterator::StreamingIterator;
+use crate::error::{AppError, Result};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use crate::error::{AppError, Result};
-use serde::{Serialize, Deserialize};
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{Parser, Query, QueryCursor};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Symbol {
@@ -29,6 +29,12 @@ pub struct CodeParser {
     parser: Parser,
 }
 
+impl Default for CodeParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeParser {
     pub fn new() -> Self {
         Self {
@@ -37,12 +43,8 @@ impl CodeParser {
     }
 
     pub fn parse_file(&mut self, path: &Path) -> Result<FileOutline> {
-        let file_name = path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let extension = path.extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         if file_name.starts_with(".env") || extension == "env" {
             return self.parse_env_file(path);
@@ -59,14 +61,17 @@ impl CodeParser {
         let (language, ts_language) = match extension {
             "py" => ("python", tree_sitter_python::LANGUAGE.into()),
             "rs" => ("rust", tree_sitter_rust::LANGUAGE.into()),
-            "ts" => ("typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            "ts" => (
+                "typescript",
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            ),
             "tsx" => ("typescript", tree_sitter_typescript::LANGUAGE_TSX.into()),
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
             "lua" => ("lua", tree_sitter_lua::LANGUAGE.into()),
             "php" => ("php", tree_sitter_php::LANGUAGE_PHP.into()),
             "tf" => ("hcl", tree_sitter_hcl::LANGUAGE.into()),
             "gd" => ("gdscript", tree_sitter_gdscript::LANGUAGE.into()),
-            "vue" => ("vue", tree_sitter_vue_updated::language().into()),
+            "vue" => ("vue", tree_sitter_vue_updated::language()),
             "md" | "json" | "toml" => {
                 let lang = match extension {
                     "md" => "markdown",
@@ -81,14 +86,22 @@ impl CodeParser {
                     imports: Vec::new(),
                 });
             }
-            _ => return Err(AppError::Parser(format!("Unsupported extension: {}", extension))),
+            _ => {
+                return Err(AppError::Parser(format!(
+                    "Unsupported extension: {}",
+                    extension
+                )))
+            }
         };
 
-        self.parser.set_language(&ts_language)
+        self.parser
+            .set_language(&ts_language)
             .map_err(|e| AppError::Parser(format!("Failed to set language: {}", e)))?;
 
         let content = fs::read_to_string(path)?;
-        let tree = self.parser.parse(&content, None)
+        let tree = self
+            .parser
+            .parse(&content, None)
             .ok_or_else(|| AppError::Parser("Failed to parse file".to_string()))?;
 
         let query_str = match language {
@@ -172,7 +185,7 @@ impl CodeParser {
 
         let query = Query::new(&ts_language, query_str)
             .map_err(|e| AppError::Parser(format!("Failed to create query: {}", e)))?;
-        
+
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
 
@@ -192,7 +205,9 @@ impl CodeParser {
             for capture in m.captures {
                 let capture_name = query.capture_names()[capture.index as usize].to_string();
                 if capture_name == "import" {
-                    let mut imp = capture.node.utf8_text(content.as_bytes())
+                    let mut imp = capture
+                        .node
+                        .utf8_text(content.as_bytes())
                         .unwrap_or("")
                         .to_string();
                     if language == "php" {
@@ -210,15 +225,24 @@ impl CodeParser {
                 } else if capture_name == "doc" {
                     let text = capture.node.utf8_text(content.as_bytes()).unwrap_or("");
                     // For Python, only keep if it's a docstring (this is a heuristic)
-                    if language == "python" && !(text.starts_with("\"\"\"") || text.starts_with("'''")) {
+                    if language == "python"
+                        && !(text.starts_with("\"\"\"") || text.starts_with("'''"))
+                    {
                         continue;
                     }
-                    
-                    raw_docs.push((capture.node.start_position().row + 1, capture.node.start_byte(), capture.node.end_byte(), text.to_string()));
+
+                    raw_docs.push((
+                        capture.node.start_position().row + 1,
+                        capture.node.start_byte(),
+                        capture.node.end_byte(),
+                        text.to_string(),
+                    ));
                     is_doc = true;
                     break;
                 } else if capture_name.starts_with("name") {
-                    let part = capture.node.utf8_text(content.as_bytes())
+                    let part = capture
+                        .node
+                        .utf8_text(content.as_bytes())
                         .unwrap_or("unknown")
                         .to_string();
                     if name.is_empty() {
@@ -228,7 +252,9 @@ impl CodeParser {
                     }
                 } else {
                     if capture_name == "kind" {
-                        kind = capture.node.utf8_text(content.as_bytes())
+                        kind = capture
+                            .node
+                            .utf8_text(content.as_bytes())
                             .unwrap_or("unknown")
                             .to_string();
                     } else {
@@ -239,13 +265,14 @@ impl CodeParser {
                     end_byte = capture.node.end_byte();
                 }
             }
-            
+
             if !is_import && !is_doc && !name.is_empty() && !kind.is_empty() {
-                let mut clean_name = name.replace("\n", " ")
+                let mut clean_name = name
+                    .replace("\n", " ")
                     .split_whitespace()
                     .collect::<Vec<_>>()
                     .join(" ");
-                
+
                 if clean_name.chars().count() > 100 {
                     clean_name = format!("{}...", clean_name.chars().take(97).collect::<String>());
                 }
@@ -266,12 +293,10 @@ impl CodeParser {
         for symbol in &mut symbols {
             let mut attached_docs = Vec::new();
             for (doc_line, doc_start, doc_end, doc_text) in &raw_docs {
-                // Case 1: Docstring is immediately before the symbol (within 2 lines)
-                if *doc_line < symbol.line && *doc_line >= symbol.line.saturating_sub(2) {
-                    attached_docs.push(doc_text.clone());
-                }
-                // Case 2: Docstring is inside the symbol's byte range
-                else if *doc_start >= symbol.start_byte && *doc_end <= symbol.end_byte {
+                // Docstring is immediately before the symbol (within 2 lines) or inside its byte range
+                if (*doc_line < symbol.line && *doc_line >= symbol.line.saturating_sub(2))
+                    || (*doc_start >= symbol.start_byte && *doc_end <= symbol.end_byte)
+                {
                     attached_docs.push(doc_text.clone());
                 }
             }
@@ -285,7 +310,10 @@ impl CodeParser {
 
         // For Vue, always add a component symbol based on the filename
         if language == "vue" {
-            let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("Component");
+            let file_name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Component");
             symbols.push(Symbol {
                 name: file_name.trim_end_matches(".vue").to_string(),
                 kind: "component".to_string(),
@@ -322,15 +350,17 @@ impl CodeParser {
             let trimmed = line_str.trim();
 
             if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                let line_without_export = if trimmed.starts_with("export ") {
-                    trimmed[7..].trim()
+                let line_without_export = if let Some(stripped) = trimmed.strip_prefix("export ") {
+                    stripped.trim()
                 } else {
                     trimmed
                 };
 
                 if let Some(idx) = line_without_export.find('=') {
                     let key = line_without_export[..idx].trim();
-                    let val = line_without_export[idx + 1..].trim().trim_matches(|c| c == '\'' || c == '"');
+                    let val = line_without_export[idx + 1..]
+                        .trim()
+                        .trim_matches(|c| c == '\'' || c == '"');
                     if !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_') {
                         let start_byte = current_byte + line_str.find(key).unwrap_or(0);
                         let end_byte = start_byte + key.len();
@@ -381,7 +411,8 @@ impl CodeParser {
         let find_line_and_bytes = |target: &str| -> (usize, usize, usize) {
             for (idx, line) in file_lines.iter().enumerate() {
                 if let Some(col) = line.find(target) {
-                    let start_byte: usize = file_lines[..idx].iter().map(|l| l.len() + 1).sum::<usize>() + col;
+                    let start_byte: usize =
+                        file_lines[..idx].iter().map(|l| l.len() + 1).sum::<usize>() + col;
                     let end_byte = start_byte + target.len();
                     return (idx + 1, start_byte, end_byte);
                 }
@@ -435,9 +466,12 @@ impl CodeParser {
                                             });
 
                                             if let Some(env_v_str) = env_v.as_str() {
-                                                if is_kafka_topic_string(env_v_str) || env_k_str.to_lowercase().contains("topic") {
+                                                if is_kafka_topic_string(env_v_str)
+                                                    || env_k_str.to_lowercase().contains("topic")
+                                                {
                                                     let role = classify_kafka_role(env_k_str);
-                                                    let (t_line, t_start, t_end) = finder(env_v_str);
+                                                    let (t_line, t_start, t_end) =
+                                                        finder(env_v_str);
                                                     symbols.push(Symbol {
                                                         name: env_v_str.to_string(),
                                                         kind: "kafka_topic".to_string(),
@@ -469,7 +503,9 @@ impl CodeParser {
                                                     role: Some("Configuration".to_string()),
                                                 });
 
-                                                if is_kafka_topic_string(env_v) || env_k.to_lowercase().contains("topic") {
+                                                if is_kafka_topic_string(env_v)
+                                                    || env_k.to_lowercase().contains("topic")
+                                                {
                                                     let role = classify_kafka_role(env_k);
                                                     let (t_line, t_start, t_end) = finder(env_v);
                                                     symbols.push(Symbol {
@@ -544,20 +580,20 @@ impl CodeParser {
                     Self::extract_yaml_symbols(item, parent_key, symbols, finder);
                 }
             }
-            serde_yaml::Value::String(s) => {
-                if is_kafka_topic_string(s) {
-                    let role = parent_key.map(classify_kafka_role).unwrap_or_else(|| "Configuration".to_string());
-                    let (line, start_byte, end_byte) = finder(s);
-                    symbols.push(Symbol {
-                        name: s.clone(),
-                        kind: "kafka_topic".to_string(),
-                        line,
-                        start_byte,
-                        end_byte,
-                        docstring: None,
-                        role: Some(role),
-                    });
-                }
+            serde_yaml::Value::String(s) if is_kafka_topic_string(s) => {
+                let role = parent_key
+                    .map(classify_kafka_role)
+                    .unwrap_or_else(|| "Configuration".to_string());
+                let (line, start_byte, end_byte) = finder(s);
+                symbols.push(Symbol {
+                    name: s.clone(),
+                    kind: "kafka_topic".to_string(),
+                    line,
+                    start_byte,
+                    end_byte,
+                    docstring: None,
+                    role: Some(role),
+                });
             }
             _ => {}
         }
@@ -589,7 +625,11 @@ impl CodeParser {
 
                 if !table_name.is_empty() {
                     let start_col = line.find(table_name).unwrap_or(0);
-                    let start_byte: usize = file_lines[..line_idx].iter().map(|l| l.len() + 1).sum::<usize>() + start_col;
+                    let start_byte: usize = file_lines[..line_idx]
+                        .iter()
+                        .map(|l| l.len() + 1)
+                        .sum::<usize>()
+                        + start_col;
                     let end_byte = start_byte + table_name.len();
 
                     symbols.push(Symbol {
@@ -618,7 +658,11 @@ impl CodeParser {
 
                 if !table_name.is_empty() {
                     let start_col = line.find(table_name).unwrap_or(0);
-                    let start_byte: usize = file_lines[..line_idx].iter().map(|l| l.len() + 1).sum::<usize>() + start_col;
+                    let start_byte: usize = file_lines[..line_idx]
+                        .iter()
+                        .map(|l| l.len() + 1)
+                        .sum::<usize>()
+                        + start_col;
                     let end_byte = start_byte + table_name.len();
 
                     symbols.push(Symbol {
@@ -631,7 +675,9 @@ impl CodeParser {
                         role: Some("Configuration".to_string()),
                     });
                 }
-            } else if upper.starts_with("CREATE VIEW") || upper.starts_with("CREATE OR REPLACE VIEW") {
+            } else if upper.starts_with("CREATE VIEW")
+                || upper.starts_with("CREATE OR REPLACE VIEW")
+            {
                 let prefix_len = if upper.starts_with("CREATE OR REPLACE VIEW") {
                     "CREATE OR REPLACE VIEW".len()
                 } else {
@@ -646,7 +692,11 @@ impl CodeParser {
 
                 if !view_name.is_empty() {
                     let start_col = line.find(view_name).unwrap_or(0);
-                    let start_byte: usize = file_lines[..line_idx].iter().map(|l| l.len() + 1).sum::<usize>() + start_col;
+                    let start_byte: usize = file_lines[..line_idx]
+                        .iter()
+                        .map(|l| l.len() + 1)
+                        .sum::<usize>()
+                        + start_col;
                     let end_byte = start_byte + view_name.len();
 
                     symbols.push(Symbol {
@@ -659,7 +709,9 @@ impl CodeParser {
                         role: Some("Definition".to_string()),
                     });
                 }
-            } else if upper.starts_with("CREATE FUNCTION") || upper.starts_with("CREATE OR REPLACE FUNCTION") {
+            } else if upper.starts_with("CREATE FUNCTION")
+                || upper.starts_with("CREATE OR REPLACE FUNCTION")
+            {
                 let prefix_len = if upper.starts_with("CREATE OR REPLACE FUNCTION") {
                     "CREATE OR REPLACE FUNCTION".len()
                 } else {
@@ -674,7 +726,11 @@ impl CodeParser {
 
                 if !func_name.is_empty() {
                     let start_col = line.find(func_name).unwrap_or(0);
-                    let start_byte: usize = file_lines[..line_idx].iter().map(|l| l.len() + 1).sum::<usize>() + start_col;
+                    let start_byte: usize = file_lines[..line_idx]
+                        .iter()
+                        .map(|l| l.len() + 1)
+                        .sum::<usize>()
+                        + start_col;
                     let end_byte = start_byte + func_name.len();
 
                     symbols.push(Symbol {
@@ -709,7 +765,7 @@ impl CodeParser {
             // 1. Scan for Kafka topics in quoted strings
             let mut search_from = 0;
             while search_from < line.len() {
-                let quote_start = line[search_from..].find(|c| c == '"' || c == '\'');
+                let quote_start = line[search_from..].find(['"', '\'']);
                 if let Some(rel_start) = quote_start {
                     let start_idx = search_from + rel_start;
                     let quote_char = line.as_bytes()[start_idx] as char;
@@ -762,7 +818,11 @@ impl CodeParser {
 
             // Python: os.environ["VAR"], os.environ.get("VAR"), os.getenv("VAR")
             if line.contains("os.environ") || line.contains("os.getenv") {
-                let trigger = if line.contains("os.environ") { "os.environ" } else { "os.getenv" };
+                let trigger = if line.contains("os.environ") {
+                    "os.environ"
+                } else {
+                    "os.getenv"
+                };
                 if let Some(var_name) = extract_between_quotes(line, trigger) {
                     if is_env_var_name(&var_name) {
                         let col = line.find(&var_name).unwrap_or(0);
@@ -803,8 +863,8 @@ impl CodeParser {
             if line.contains("process.env") {
                 if let Some(idx) = line.find("process.env") {
                     let rest = &line[idx + "process.env".len()..];
-                    if rest.starts_with('.') {
-                        let var_name = rest[1..]
+                    if let Some(stripped) = rest.strip_prefix('.') {
+                        let var_name = stripped
                             .split(|c: char| !c.is_alphanumeric() && c != '_')
                             .next()
                             .unwrap_or("");
@@ -847,14 +907,15 @@ impl CodeParser {
 pub fn is_env_var_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 100
-        && s.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && s.chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
         && s.chars().any(|c| c.is_ascii_uppercase())
 }
 
 pub fn extract_between_quotes(line: &str, after_prefix: &str) -> Option<String> {
     if let Some(idx) = line.find(after_prefix) {
         let rest = &line[idx + after_prefix.len()..];
-        if let Some(q_start) = rest.find(|c| c == '"' || c == '\'') {
+        if let Some(q_start) = rest.find(['"', '\'']) {
             let q_char = rest.as_bytes()[q_start] as char;
             if let Some(q_end) = rest[q_start + 1..].find(q_char) {
                 return Some(rest[q_start + 1..q_start + 1 + q_end].to_string());
@@ -895,14 +956,33 @@ pub fn classify_kafka_code_role(line: &str) -> String {
 
 pub fn is_kafka_topic_string(s: &str) -> bool {
     let s = s.trim().trim_matches(|c| c == '\'' || c == '"');
-    if s.len() < 3 || s.contains(' ') || s.contains('/') || s.contains('\\') || s.contains(':') || s.contains('{') || s.contains('$') {
+    if s.len() < 3
+        || s.contains(' ')
+        || s.contains('/')
+        || s.contains('\\')
+        || s.contains(':')
+        || s.contains('{')
+        || s.contains('$')
+    {
         return false;
     }
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() >= 2 {
-        let all_valid = parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
+        let all_valid = parts.iter().all(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        });
         if all_valid {
-            if parts.last().map(|last| last.starts_with('v') && last.len() > 1 && last[1..].chars().all(|c| c.is_ascii_digit())).unwrap_or(false) {
+            if parts
+                .last()
+                .map(|last| {
+                    last.starts_with('v')
+                        && last.len() > 1
+                        && last[1..].chars().all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false)
+            {
                 return true;
             }
             if parts.len() >= 3 {
@@ -938,7 +1018,11 @@ pub fn classify_kafka_role(context: &str) -> String {
         || lower.contains("globalktable(")
     {
         "Consumer".to_string()
-    } else if lower.contains(".yml") || lower.contains(".yaml") || lower.contains("docker-compose") || lower.contains("config") {
+    } else if lower.contains(".yml")
+        || lower.contains(".yaml")
+        || lower.contains("docker-compose")
+        || lower.contains("config")
+    {
         "Configuration".to_string()
     } else {
         "Reference".to_string()
@@ -980,14 +1064,26 @@ mod tests {
         let outline = parser.parse_env_file(&temp_path).unwrap();
         std::fs::remove_file(&temp_path).ok();
 
-        let env_vars: Vec<&str> = outline.symbols.iter().filter(|s| s.kind == "config_env_var").map(|s| s.name.as_str()).collect();
+        let env_vars: Vec<&str> = outline
+            .symbols
+            .iter()
+            .filter(|s| s.kind == "config_env_var")
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(env_vars.contains(&"DATABASE_URL"));
         assert!(env_vars.contains(&"KAFKA_OUTPUT_TOPIC"));
         assert!(env_vars.contains(&"KAFKA_INPUT_TOPIC"));
 
-        let topics: Vec<&Symbol> = outline.symbols.iter().filter(|s| s.kind == "kafka_topic").collect();
+        let topics: Vec<&Symbol> = outline
+            .symbols
+            .iter()
+            .filter(|s| s.kind == "kafka_topic")
+            .collect();
         assert_eq!(topics.len(), 2);
-        let out_topic = topics.iter().find(|s| s.name == "wde.labels.phase.v1").unwrap();
+        let out_topic = topics
+            .iter()
+            .find(|s| s.name == "wde.labels.phase.v1")
+            .unwrap();
         assert_eq!(out_topic.role.as_deref(), Some("Producer"));
         let in_topic = topics.iter().find(|s| s.name == "wde.bars.raw.v5").unwrap();
         assert_eq!(in_topic.role.as_deref(), Some("Consumer"));
@@ -1012,14 +1108,28 @@ services:
         let outline = parser.parse_yaml_file(&temp_path).unwrap();
         std::fs::remove_file(&temp_path).ok();
 
-        assert!(outline.symbols.iter().any(|s| s.name == "KAFKA_BOOTSTRAP" && s.kind == "config_env_var"));
-        assert!(outline.symbols.iter().any(|s| s.name == "OUTPUT_TOPIC" && s.kind == "config_env_var"));
+        assert!(outline
+            .symbols
+            .iter()
+            .any(|s| s.name == "KAFKA_BOOTSTRAP" && s.kind == "config_env_var"));
+        assert!(outline
+            .symbols
+            .iter()
+            .any(|s| s.name == "OUTPUT_TOPIC" && s.kind == "config_env_var"));
 
-        let out_topic = outline.symbols.iter().find(|s| s.name == "wde.labels.phase.v1").unwrap();
+        let out_topic = outline
+            .symbols
+            .iter()
+            .find(|s| s.name == "wde.labels.phase.v1")
+            .unwrap();
         assert_eq!(out_topic.kind, "kafka_topic");
         assert_eq!(out_topic.role.as_deref(), Some("Producer"));
 
-        let in_topic = outline.symbols.iter().find(|s| s.name == "wde.bars.raw.v5").unwrap();
+        let in_topic = outline
+            .symbols
+            .iter()
+            .find(|s| s.name == "wde.bars.raw.v5")
+            .unwrap();
         assert_eq!(in_topic.kind, "kafka_topic");
         assert_eq!(in_topic.role.as_deref(), Some("Consumer"));
     }
@@ -1045,12 +1155,26 @@ CREATE FUNCTION calculate_level() RETURNS void AS $$ BEGIN END; $$ LANGUAGE plpg
         let outline = parser.parse_sql_file(&temp_path).unwrap();
         std::fs::remove_file(&temp_path).ok();
 
-        let tables: Vec<&Symbol> = outline.symbols.iter().filter(|s| s.kind == "database_table").collect();
-        assert!(tables.iter().any(|s| s.name == "public.levels_history" && s.role.as_deref() == Some("Definition")));
-        assert!(tables.iter().any(|s| s.name == "public.levels_history" && s.role.as_deref() == Some("Configuration")));
-        assert!(tables.iter().any(|s| s.name == "active_levels" && s.role.as_deref() == Some("Definition")));
+        let tables: Vec<&Symbol> = outline
+            .symbols
+            .iter()
+            .filter(|s| s.kind == "database_table")
+            .collect();
+        assert!(tables
+            .iter()
+            .any(|s| s.name == "public.levels_history" && s.role.as_deref() == Some("Definition")));
+        assert!(tables.iter().any(
+            |s| s.name == "public.levels_history" && s.role.as_deref() == Some("Configuration")
+        ));
+        assert!(tables
+            .iter()
+            .any(|s| s.name == "active_levels" && s.role.as_deref() == Some("Definition")));
 
-        let fns: Vec<&Symbol> = outline.symbols.iter().filter(|s| s.kind == "function").collect();
+        let fns: Vec<&Symbol> = outline
+            .symbols
+            .iter()
+            .filter(|s| s.kind == "function")
+            .collect();
         assert!(fns.iter().any(|s| s.name == "calculate_level"));
     }
 
@@ -1068,11 +1192,19 @@ fun configure() {
 "#;
         CodeParser::scan_code_entities(kt_code, "kotlin", &mut symbols);
 
-        let topic_names: Vec<&str> = symbols.iter().filter(|s| s.kind == "kafka_topic").map(|s| s.name.as_str()).collect();
+        let topic_names: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == "kafka_topic")
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(topic_names.contains(&"wde.labels.phase.v1"));
         assert!(topic_names.contains(&"wde.bars.raw.v5"));
 
-        let env_vars: Vec<&str> = symbols.iter().filter(|s| s.kind == "config_env_var").map(|s| s.name.as_str()).collect();
+        let env_vars: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == "config_env_var")
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(env_vars.contains(&"KAFKA_BROKERS"));
 
         let mut py_symbols = Vec::new();
@@ -1086,13 +1218,19 @@ def send_events():
 "#;
         CodeParser::scan_code_entities(py_code, "python", &mut py_symbols);
 
-        let out_topic = py_symbols.iter().find(|s| s.name == "wde.labels.phase.v1").unwrap();
+        let out_topic = py_symbols
+            .iter()
+            .find(|s| s.name == "wde.labels.phase.v1")
+            .unwrap();
         assert_eq!(out_topic.kind, "kafka_topic");
         assert_eq!(out_topic.role.as_deref(), Some("Producer"));
 
-        let py_env_vars: Vec<&str> = py_symbols.iter().filter(|s| s.kind == "config_env_var").map(|s| s.name.as_str()).collect();
+        let py_env_vars: Vec<&str> = py_symbols
+            .iter()
+            .filter(|s| s.kind == "config_env_var")
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(py_env_vars.contains(&"DB_PASSWORD"));
         assert!(py_env_vars.contains(&"API_KEY"));
     }
 }
-

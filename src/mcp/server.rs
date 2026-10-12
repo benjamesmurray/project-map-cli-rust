@@ -1,24 +1,26 @@
-use std::path::Path;
-use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::Arc;
 
-use rust_mcp_sdk::{McpServer as SdkMcpServer, TransportOptions, StdioTransport, ToMcpServerHandler};
-use rust_mcp_sdk::mcp_server::{server_runtime, McpServerOptions, ServerHandler};
-use rust_mcp_sdk::schema::{
-    CallToolRequestParams, CallToolResult, InitializeResult,
-    PaginatedRequestParams, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools,
-    Implementation, ProtocolVersion, RpcError, GenericResult,
-};
-use rust_mcp_sdk::schema::schema_utils::{CallToolError, CustomRequest};
 use rust_mcp_sdk::macros::{mcp_tool, JsonSchema};
+use rust_mcp_sdk::mcp_server::{server_runtime, McpServerOptions, ServerHandler};
+use rust_mcp_sdk::schema::schema_utils::{CallToolError, CustomRequest};
+use rust_mcp_sdk::schema::{
+    CallToolRequestParams, CallToolResult, GenericResult, Implementation, InitializeResult,
+    ListToolsResult, PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities,
+    ServerCapabilitiesTools,
+};
+use rust_mcp_sdk::{
+    McpServer as SdkMcpServer, StdioTransport, ToMcpServerHandler, TransportOptions,
+};
 use tracing_subscriber::fmt;
 
-use crate::error::Result;
+use crate::core::orchestrator::rebuild_and_publish;
 use crate::core::query_engine::QueryEngine;
-use crate::core::orchestrator::Orchestrator;
 use crate::core::toon::ToonFormatter;
-use crate::core::utils::{render_tree, get_active_features};
+use crate::core::utils::{get_active_features, normalize_rel_path, render_tree};
+use crate::error::Result;
 
 // --- Tool Definitions ---
 
@@ -101,19 +103,45 @@ pub struct InitTool {}
 // --- Server Implementation ---
 
 pub struct McpServer {
+    root: std::path::PathBuf,
+    out: std::path::PathBuf,
     engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
+}
+
+impl Default for McpServer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl McpServer {
     pub fn new() -> Self {
-        let engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
+        Self::with_paths(
+            std::path::PathBuf::from("."),
+            std::path::PathBuf::from(".project-map"),
+        )
+    }
+
+    pub fn with_paths(root: std::path::PathBuf, out: std::path::PathBuf) -> Self {
+        let index_file = out.join("latest").join(".project-map.json");
+        let engine = QueryEngine::load_with_retry(
+            &index_file,
+            crate::core::query_engine::RetryPolicy::default(),
+        )
+        .ok();
         Self {
+            root,
+            out,
             engine: Arc::new(std::sync::RwLock::new(engine)),
         }
     }
 
     pub fn with_engine(engine: Arc<std::sync::RwLock<Option<QueryEngine>>>) -> Self {
-        Self { engine }
+        Self {
+            root: std::path::PathBuf::from("."),
+            out: std::path::PathBuf::from(".project-map"),
+            engine,
+        }
     }
 
     pub fn engine(&self) -> Arc<std::sync::RwLock<Option<QueryEngine>>> {
@@ -121,15 +149,16 @@ impl McpServer {
     }
 
     pub async fn run(&self) -> Result<()> {
-        let _ = fmt()
-            .with_writer(std::io::stderr)
-            .try_init();
+        let _ = fmt().with_writer(std::io::stderr).try_init();
 
         let server_info = InitializeResult {
             protocol_version: ProtocolVersion::V2025_11_25.into(),
             capabilities: ServerCapabilities {
                 tools: Some(ServerCapabilitiesTools { list_changed: None }),
-                resources: Some(rust_mcp_sdk::schema::ServerCapabilitiesResources { subscribe: None, list_changed: None }),
+                resources: Some(rust_mcp_sdk::schema::ServerCapabilitiesResources {
+                    subscribe: None,
+                    list_changed: None,
+                }),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -147,7 +176,7 @@ impl McpServer {
         let transport = StdioTransport::new(TransportOptions::default())
             .map_err(|e| crate::error::AppError::Generic(format!("Transport error: {}", e)))?;
         let handler = self.clone_for_handler();
-        
+
         let options = McpServerOptions {
             server_details: server_info,
             transport,
@@ -158,25 +187,44 @@ impl McpServer {
         };
 
         let server = server_runtime::create_server(options);
-        server.start().await.map_err(|e| crate::error::AppError::Generic(format!("Server error: {}", e)))?;
+        server
+            .start()
+            .await
+            .map_err(|e| crate::error::AppError::Generic(format!("Server error: {}", e)))?;
 
         Ok(())
     }
 
     fn clone_for_handler(&self) -> McpServerHandler {
         McpServerHandler {
+            root: self.root.clone(),
+            out: self.out.clone(),
             engine: Arc::clone(&self.engine),
         }
     }
 }
 
 pub struct McpServerHandler {
+    root: std::path::PathBuf,
+    out: std::path::PathBuf,
     engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
 }
 
 impl McpServerHandler {
     pub fn new(engine: Arc<std::sync::RwLock<Option<QueryEngine>>>) -> Self {
-        Self { engine }
+        Self {
+            root: std::path::PathBuf::from("."),
+            out: std::path::PathBuf::from(".project-map"),
+            engine,
+        }
+    }
+
+    pub fn with_paths(
+        root: std::path::PathBuf,
+        out: std::path::PathBuf,
+        engine: Arc<std::sync::RwLock<Option<QueryEngine>>>,
+    ) -> Self {
+        Self { root, out, engine }
     }
 }
 
@@ -221,7 +269,9 @@ impl ServerHandler for McpServerHandler {
             uri: "project-map://status".to_string(),
             name: "Project Map Status".to_string(),
             title: Some("Project Map Status".to_string()),
-            description: Some("Index status, symbol count, file count, and last indexed timestamp".to_string()),
+            description: Some(
+                "Index status, symbol count, file count, and last indexed timestamp".to_string(),
+            ),
             mime_type: Some("application/json".to_string()),
             icons: vec![],
             size: None,
@@ -232,7 +282,9 @@ impl ServerHandler for McpServerHandler {
             uri: "project-map://tree".to_string(),
             name: "Project Map Tree".to_string(),
             title: Some("Project Map Tree".to_string()),
-            description: Some("High-level project file structure and architectural pulse".to_string()),
+            description: Some(
+                "High-level project file structure and architectural pulse".to_string(),
+            ),
             mime_type: Some("text/plain".to_string()),
             icons: vec![],
             size: None,
@@ -251,7 +303,7 @@ impl ServerHandler for McpServerHandler {
         params: rust_mcp_sdk::schema::ReadResourceRequestParams,
         _runtime: Arc<dyn SdkMcpServer>,
     ) -> std::result::Result<rust_mcp_sdk::schema::ReadResourceResult, RpcError> {
-        use rust_mcp_sdk::schema::{ReadResourceResult, ReadResourceContent, TextResourceContents};
+        use rust_mcp_sdk::schema::{ReadResourceContent, ReadResourceResult, TextResourceContents};
         let index_path = Path::new(".project-map/latest/.project-map.json");
         let content = match params.uri.as_str() {
             "project-map://status" => {
@@ -287,7 +339,8 @@ impl ServerHandler for McpServerHandler {
                     let paths = engine.get_all_file_paths();
                     render_tree(&paths, 3)
                 } else {
-                    "Index not initialized. Run 'project-map init' or pass --watch to build index.".to_string()
+                    "Index not initialized. Run 'project-map init' or pass --watch to build index."
+                        .to_string()
                 };
                 ReadResourceContent::TextResourceContents(TextResourceContents {
                     uri: "project-map://tree".to_string(),
@@ -314,30 +367,39 @@ impl ServerHandler for McpServerHandler {
         let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let text = match params.name.as_str() {
             "status" => {
-                let (is_ready, tree, active_features) = if let Some(ref engine) = *self.engine.read().unwrap() {
+                let latest_path = self.out.join("latest").join(".project-map.json");
+                let engine_guard = self.engine.read().unwrap();
+                let (tree, active_features) = if let Some(ref engine) = *engine_guard {
                     let paths = engine.get_all_file_paths();
                     let tree = render_tree(&paths, 3);
-                    
-                    let active = get_active_features(Path::new("."));
-                    (true, Some(tree), active)
+                    let active = get_active_features(&self.root);
+                    (Some(tree), active)
                 } else {
-                    (false, None, Vec::new())
+                    (None, Vec::new())
                 };
 
-                ToonFormatter::format_status(is_ready, Some(".project-map/latest/.project-map.json"), tree.as_deref(), &active_features)
+                ToonFormatter::format_full_status(
+                    engine_guard.as_ref(),
+                    Some(&self.root),
+                    Some(&self.out),
+                    latest_path.to_str(),
+                    tree.as_deref(),
+                    &active_features,
+                )
             }
             "query" => {
-                let args: QueryTool = serde_json::from_value(arguments)
-                    .map_err(|e| CallToolError(Box::new(e)))?;
-                
+                let args: QueryTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     if let Some(q) = args.query {
                         let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
                         let matches = engine.find_entities_with_preview(&q, preview_lines);
                         ToonFormatter::format_entity_matches(&q, &matches)
                     } else if let Some(p) = args.path {
-                        let symbols = engine.get_file_outline(&p);
-                        ToonFormatter::format_file_context(&p, &symbols)
+                        let norm_p = normalize_rel_path(Path::new("."), &p);
+                        let symbols = engine.get_file_outline(&norm_p);
+                        ToonFormatter::format_file_context(&norm_p, &symbols)
                     } else if let Some(f) = args.filename {
                         let matches = engine.find_files(&f);
                         ToonFormatter::format_file_matches(&f, &matches)
@@ -349,20 +411,21 @@ impl ServerHandler for McpServerHandler {
                 }
             }
             "blast_radius" => {
-                let args: BlastRadiusTool = serde_json::from_value(arguments)
-                    .map_err(|e| CallToolError(Box::new(e)))?;
-                
+                let args: BlastRadiusTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+
                 if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let results = engine.check_blast_radius(&args.path, &args.symbol);
-                    ToonFormatter::format_blast_radius(&args.path, &args.symbol, &results)
+                    let norm_path = normalize_rel_path(Path::new("."), &args.path);
+                    let results = engine.check_blast_radius(&norm_path, &args.symbol);
+                    ToonFormatter::format_blast_radius(&norm_path, &args.symbol, &results)
                 } else {
                     "Error: Index not loaded".to_string()
                 }
             }
             "plan" => {
-                let args: PlanTool = serde_json::from_value(arguments)
-                    .map_err(|e| CallToolError(Box::new(e)))?;
-                
+                let args: PlanTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let impact = engine.analyze_impact(&args.symbol);
                     ToonFormatter::format_impact_analysis(&args.symbol, &impact)
@@ -371,9 +434,9 @@ impl ServerHandler for McpServerHandler {
                 }
             }
             "search" => {
-                let args: SearchTool = serde_json::from_value(arguments)
-                    .map_err(|e| CallToolError(Box::new(e)))?;
-                
+                let args: SearchTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
                     let matches = engine.find_entities_with_preview(&args.query, preview_lines);
@@ -383,18 +446,25 @@ impl ServerHandler for McpServerHandler {
                 }
             }
             "fetch_symbol" => {
-                let args: FetchSymbolTool = serde_json::from_value(arguments)
-                    .map_err(|e| CallToolError(Box::new(e)))?;
-                
+                let args: FetchSymbolTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+
                 if let Some(ref engine) = *self.engine.read().unwrap() {
-                    if let Some(node) = engine.find_symbol_in_path(&args.path, &args.symbol) {
+                    let norm_path = normalize_rel_path(Path::new("."), &args.path);
+                    if let Some(node) = engine.find_symbol_in_path(&norm_path, &args.symbol) {
                         if let Ok(content) = std::fs::read_to_string(&node.path) {
                             let bytes = content.as_bytes();
-                            let content_str = if node.start_byte < bytes.len() && node.end_byte <= bytes.len() && node.end_byte > node.start_byte {
-                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte]).to_string()
+                            let content_str = if node.start_byte < bytes.len()
+                                && node.end_byte <= bytes.len()
+                                && node.end_byte > node.start_byte
+                            {
+                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte])
+                                    .to_string()
                             } else if node.line > 0 {
-                                let mut extractor = crate::core::query_engine::SnippetExtractor::new();
-                                extractor.extract(&args.path, node.line, 5)
+                                let mut extractor =
+                                    crate::core::query_engine::SnippetExtractor::new();
+                                extractor
+                                    .extract(&node.path, node.line, 5)
                                     .map(|p| p.formatted)
                                     .unwrap_or_default()
                             } else {
@@ -402,7 +472,11 @@ impl ServerHandler for McpServerHandler {
                             };
 
                             if !content_str.is_empty() {
-                                ToonFormatter::format_fetch_result(&args.path, &args.symbol, Some(&content_str))
+                                ToonFormatter::format_fetch_result(
+                                    &norm_path,
+                                    &args.symbol,
+                                    Some(&content_str),
+                                )
                             } else {
                                 "Error: Byte range or line out of bounds".to_string()
                             }
@@ -410,28 +484,30 @@ impl ServerHandler for McpServerHandler {
                             "Error: Could not read file".to_string()
                         }
                     } else {
-                        ToonFormatter::format_fetch_result(&args.path, &args.symbol, None)
+                        ToonFormatter::format_fetch_result(&norm_path, &args.symbol, None)
                     }
                 } else {
                     "Error: Index not loaded".to_string()
                 }
             }
-            "init" => {
-                let mut orch = Orchestrator::new();
-                let _ = orch.scaffold_if_empty(Path::new("."));
-                if orch.build_index(Path::new(".")).is_ok() && orch.save_index_versioned(Path::new(".project-map")).is_ok() {
-                    let new_engine = QueryEngine::load(Path::new(".project-map/latest/.project-map.json")).ok();
-                    *self.engine.write().unwrap() = new_engine;
+            "init" => match rebuild_and_publish(&self.root, &self.out) {
+                Ok(new_engine) => {
+                    *self.engine.write().unwrap() = Some(new_engine);
                     "Index refreshed successfully.".to_string()
-                } else {
-                    "Failed to refresh index.".to_string()
                 }
-            }
+                Err(e) => {
+                    format!("Failed to refresh index: {}", e)
+                }
+            },
 
-            _ => return Err(CallToolError(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unknown tool")))),
+            _ => {
+                return Err(CallToolError(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Unknown tool",
+                ))))
+            }
         };
 
         Ok(CallToolResult::text_content(vec![text.into()]))
     }
 }
-

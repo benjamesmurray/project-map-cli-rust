@@ -1,0 +1,228 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Phase 1: Failing Regression Tests (Test-First)",
+      "description": "Add tests that FAIL on 0.1.18 and pin each defect: (a) D1/D2: temp root with real source files plus a truncated latest/.project-map.json; loading must not create backups, must not create ARCHITECTURE.md in out_dir, and must not change latest; (b) D5: query/fetch_symbol/blast_radius with 'a/b.py' vs './a/b.py' vs absolute give identical results; (c) D7: file outline returns the file's own node name (build a minimal fixture reproducing the common.py -> ingestion.src.rpc.price_math mislabel; investigate the cause first and record it); (d) D6: a fixture copied from the observed 1.6 KB out-dir-only index makes status print a WARNING. Mark them #[ignore] with the defect id only if that is needed to keep main green between commits; each later task un-ignores its tests.",
+      "status": "completed",
+      "dependencies": []
+    },
+    {
+      "id": "1.2",
+      "title": "Phase 1: normalize_rel_path Helper (D5)",
+      "description": "Add core::utils::normalize_rel_path(root, p) -> String: strip a leading './', make absolute paths relative to root, use '/' separators, and leave non-root absolute paths unchanged. Unit tests: './a/b', 'a/b', '/root/a/b', '.', windows-style separators, paths outside root.",
+      "status": "completed",
+      "dependencies": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Phase 1: Apply Path Normalisation at Index, Load & Query",
+      "description": "Store normalised paths in build_index (NodeData.path) and FQN derivation. Normalise node paths in memory when loading legacy indexes. Normalise path arguments in QueryEngine (get_file_outline, fetch, blast radius, plan) and in the MCP and CLI argument handling, through the single helper. Un-ignore the 1.1(b) tests. Verify existing integration_test.rs / mcp_test.rs expectations and update the './' expectations deliberately (documented in the CHANGELOG later).",
+      "status": "completed",
+      "dependencies": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Phase 1: IndexMeta in Index JSON",
+      "description": "Add an IndexMeta struct (schema_version=2, tool_version from CARGO_PKG_VERSION, canonical root, built_at RFC 3339, builder_pid, file/symbol/edge counts) to SerializableGraph as Option with #[serde(default)]. Populate it in build. Tests: a legacy fixture without meta loads; a 0.2.0 index parses with a copy of the 0.1.18 SerializableGraph struct (forward compatibility); counts are correct.",
+      "status": "completed",
+      "dependencies": [
+        "1.3"
+      ]
+    },
+    {
+      "id": "1.R",
+      "title": "Phase 1 Code Review, Test Run & Review Gate",
+      "description": "Review Phase 1 changes (test-first fixtures, normalize_rel_path, IndexMeta): DRY (one implementation each of path normalisation, build+publish and status formatting; no copied logic between main.rs, mcp/server.rs and watcher.rs), error handling (no unwrap() on fs/lock paths in non-test code), naming, doc comments on public items, and a test for every new branch. Run `cargo test`, `cargo clippy --all-targets -- -D warnings` and `cargo build --release`. Summarise the findings in the task notes. PAUSE for user review before the next phase.",
+      "status": "completed",
+      "dependencies": [
+        "1.4"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Phase 2: Pure Graph::load + CorruptIndex + load_with_retry (D1, D2)",
+      "description": "Remove the rebuild-on-parse-error branch from Graph::load entirely. Return AppError::CorruptIndex{path, source} on parse failure. Add QueryEngine::load_with_retry(path, RetryPolicy) with defaults of 3 retries at 100/250/500 ms and an injectable policy for tests. Un-ignore the 1.1(a) tests. Grep to confirm no remaining build_index call takes a root derived from an index path.",
+      "status": "completed",
+      "dependencies": [
+        "1.R"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Phase 2: Atomic Graph::save (D3)",
+      "description": "Write to '<file>.tmp.<pid>.<nanos>' in the same directory, flush plus sync_all, then rename over the target. Clean up the temp file on error. Unit test: an injected failure mid-write leaves the original file intact.",
+      "status": "completed",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Phase 2: Root/Out Invariants & Out-Dir Exclusion (D1, D8)",
+      "description": "Change the signatures to build_index(root, out_dir) and scaffold_if_empty(root, out_dir). Return an error if canonical root == out_dir or root is inside out_dir. Exclude out_dir by canonical path in the builder walk and in watcher::is_ignored_path (keep the existing name filters). scaffold_if_empty never writes inside out_dir. Tests: build_index(out, out) errors; a custom --out inside root is not indexed and does not trigger the watcher.",
+      "status": "completed",
+      "dependencies": [
+        "2.2"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Phase 2: IndexLock (Advisory Single-Writer Lock)",
+      "description": "Add core::lock::IndexLock::acquire(out_dir, timeout) -> Result<IndexLockGuard>, using fd-lock or fs4 (choose one and justify in the notes; at most one new dependency) on <out>/.lock. Never delete the lock file. Add tempfile as a dev-dependency. Tests: second acquire times out while the first is held; release on drop; cross-process exclusion (spawn the test binary or a child process).",
+      "status": "completed",
+      "dependencies": [
+        "2.3"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Phase 2: save_index_versioned - Locked, Collision-Free, Atomic latest, Safe Rotation (D3, D4)",
+      "description": "Under IndexLock: backup dir names YYYYMMDD_HHMMSS_mmm_<pid>; save via atomic Graph::save; swap latest by creating a temp symlink and renaming it over latest (copy+rename fallback where symlinks are unavailable); rotate to keep the newest 5 and never remove the latest target. Tests: two saves in the same millisecond from different pids do not collide; latest is never missing (polling reader during 50 saves); rotation never deletes the latest target.",
+      "status": "completed",
+      "dependencies": [
+        "2.4"
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Phase 2: rebuild_and_publish - One Build Path (DRY)",
+      "description": "Add core::orchestrator::rebuild_and_publish(root, out_dir) -> Result<QueryEngine> (lock -> scaffold -> build -> save -> load) and use it from main.rs Build/Refresh/Watch, mcp::server init and the watcher. Delete the duplicated sequences. Run blast_radius on build_index / save_index_versioned and update every caller. Verify: all existing tests pass.",
+      "status": "completed",
+      "dependencies": [
+        "2.5"
+      ]
+    },
+    {
+      "id": "2.R",
+      "title": "Phase 2 Code Review, Test Run & Review Gate",
+      "description": "Review Phase 2 changes (graph.rs, orchestrator.rs, new lock module, call-site consolidation): DRY (one implementation each of path normalisation, build+publish and status formatting; no copied logic between main.rs, mcp/server.rs and watcher.rs), error handling (no unwrap() on fs/lock paths in non-test code), naming, doc comments on public items, and a test for every new branch. Run `cargo test`, `cargo clippy --all-targets -- -D warnings` and `cargo build --release`. Summarise the findings in the task notes. PAUSE for user review before the next phase.",
+      "status": "completed",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Phase 3: Watcher Coalescing, Lock Timeout & Engine Retention",
+      "description": "On a debounced event: acquire IndexLock (default 30 s timeout, configurable). If latest's meta.built_at (or mtime) is newer than the event timestamp, skip the rebuild and only reload. On timeout, skip and log, and let the next event retry. On reload failure, keep the previous engine and log a warning. ProjectWatcher carries explicit root and out_dir. Tests: two watchers with one burst do <= bursts+1 rebuilds; a reload failure keeps the old engine answering queries.",
+      "status": "completed",
+      "dependencies": [
+        "2.R"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Phase 3: MCP & CLI Status with Meta and Warnings (D6)",
+      "description": "Add one shared status formatter used by both the MCP status tool and the CLI status: root, tool_version, built_at, file/symbol/edge counts, and active features (existing). Print WARNINGs for file_count==0, an out-dir-only index, meta.root != server root, and a legacy index without meta. MCP server init/load use load_with_retry and the explicit root/out (McpServer::new takes root/out from the Mcp command args). Un-ignore the 1.1(d) tests.",
+      "status": "completed",
+      "dependencies": [
+        "3.1"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Phase 3: Fix D7 File-Outline Node Mislabel",
+      "description": "Using the cause recorded in 1.1(c), fix the outline or FQN mapping so a file's outline shows its own file node, with import targets (if they are legitimately included) labelled distinctly. Un-ignore the 1.1(c) test. Add one more fixture covering two files with the same stem in different packages.",
+      "status": "completed",
+      "dependencies": [
+        "3.2"
+      ]
+    },
+    {
+      "id": "3.R",
+      "title": "Phase 3 Code Review, Test Run & Review Gate",
+      "description": "Review Phase 3 changes (watcher.rs, mcp/server.rs, main.rs status, outline fix): DRY (one implementation each of path normalisation, build+publish and status formatting; no copied logic between main.rs, mcp/server.rs and watcher.rs), error handling (no unwrap() on fs/lock paths in non-test code), naming, doc comments on public items, and a test for every new branch. Run `cargo test`, `cargo clippy --all-targets -- -D warnings` and `cargo build --release`. Summarise the findings in the task notes. PAUSE for user review before the next phase.",
+      "status": "completed",
+      "dependencies": [
+        "3.3"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Phase 4: Atomicity Reader-Loop Test",
+      "description": "Integration test: a reader thread calls QueryEngine::load in a tight loop while a writer runs rebuild_and_publish 50 times on a 200-file temp root. Assert zero parse errors, zero missing-latest errors, and every observed index has >= 95% of the files.",
+      "status": "completed",
+      "dependencies": [
+        "3.R"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Phase 4: Multi-Process Watcher Stress Test",
+      "description": "Integration test spawning two `mcp -w` (or `watch`) child processes of the built binary (CARGO_BIN_EXE) on one temp root of 200 files, then performing 200 rapid writes across files, including byte-identical rewrites of a JSON file (the original trigger). Afterwards: the final latest contains all files; at most 5 backups; no ARCHITECTURE.md in out_dir; a concurrently polling reader saw no parse errors and no degenerate index. Mark #[ignore] only if the runtime exceeds 60 s, and document how to run it.",
+      "status": "completed",
+      "dependencies": [
+        "4.1"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Phase 4: Backward / Forward Compatibility Fixtures",
+      "description": "Commit small fixtures: a 0.1.18-format index (./ paths, no meta) and the observed degenerate index. Tests: legacy loads and answers both path forms; degenerate triggers the status WARNING; a 0.2.0 index parses with the 0.1.18 struct copy.",
+      "status": "completed",
+      "dependencies": [
+        "4.2"
+      ]
+    },
+    {
+      "id": "4.4",
+      "title": "Phase 4: Full Quality Run",
+      "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test (including ignored stress tests run once explicitly), cargo build --release. Record the test counts and timings.",
+      "status": "completed",
+      "dependencies": [
+        "4.3"
+      ]
+    },
+    {
+      "id": "4.R",
+      "title": "Phase 4 Code Review, Test Run & Review Gate",
+      "description": "Review Phase 4 changes (tests/ concurrency and compatibility suites): DRY (one implementation each of path normalisation, build+publish and status formatting; no copied logic between main.rs, mcp/server.rs and watcher.rs), error handling (no unwrap() on fs/lock paths in non-test code), naming, doc comments on public items, and a test for every new branch. Run `cargo test`, `cargo clippy --all-targets -- -D warnings` and `cargo build --release`. Summarise the findings in the task notes. PAUSE for user review before the next phase.",
+      "status": "completed",
+      "dependencies": [
+        "4.4"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Phase 5: Version Bump, CHANGELOG & README",
+      "description": "Bump Cargo.toml to 0.2.0 (and Cargo.lock). Create CHANGELOG.md with a 0.2.0 entry: fixes D1-D8, the path-format change (paths no longer start with './'; inputs accept both forms), the new status fields and warnings, the lock file, and the new dependency. Update the README sections on the watcher and concurrency (multiple MCP clients on one root are safe from 0.2.0), on status, and add an 'Upgrading from 0.1.x' section (cargo install --force, restart ALL MCP clients, run init once).",
+      "status": "completed",
+      "dependencies": [
+        "4.R"
+      ]
+    },
+    {
+      "id": "5.2",
+      "title": "Phase 5: Package & Publish Dry-Run",
+      "description": "Check that the Cargo.toml metadata (description, license, repository, readme, keywords, categories) is complete, and that the package excludes projects/, handover/, temp/, .project-map/ and target/ (include/exclude). Run cargo package --list (review the contents) and cargo publish --dry-run. Do NOT publish: the user publishes to crates.io and pushes to GitHub.",
+      "status": "completed",
+      "dependencies": [
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.3",
+      "title": "Phase 5: Release Handover for User",
+      "description": "Write handover/<date>_0.2.0_release_handover.md with: summary, test evidence, exact publish commands (git tag v0.2.0, git push --tags, cargo publish), and the /opt/wde rollout runbook from the spec's Rollout section, including the field check (criterion 11) and the docs/coding_assistant_setup.md update.",
+      "status": "completed",
+      "dependencies": [
+        "5.2"
+      ]
+    },
+    {
+      "id": "5.G",
+      "title": "Phase 5: Completion Checkpoint & Archive",
+      "description": "Present the completion summary to the user and map each acceptance criterion 1-11 to its evidence (criterion 11 is pending until rollout). After user approval, archive the project with the spec workflow (sc_plan / deliver-cli plan).",
+      "status": "in_progress",
+      "dependencies": [
+        "5.3"
+      ]
+    }
+  ]
+}

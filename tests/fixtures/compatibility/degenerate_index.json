@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "schema_version": 2,
+    "tool_version": "0.1.18",
+    "root": "/opt/wde/.project-map",
+    "built_at": "2026-10-12T15:08:54.000Z",
+    "builder_pid": 1773051,
+    "file_count": 2,
+    "symbol_count": 0,
+    "edge_count": 0
+  },
+  "nodes": [
+    {
+      "path": ".project-map/ARCHITECTURE.md",
+      "name": ".project-map/ARCHITECTURE.md",
+      "kind": "file",
+      "line": 1,
+      "start_byte": 0,
+      "end_byte": 100,
+      "node_type": "File",
+      "docstring": null
+    },
+    {
+      "path": ".project-map/backups/20261012_150854/.project-map.json",
+      "name": ".project-map/backups/20261012_150854/.project-map.json",
+      "kind": "file",
+      "line": 1,
+      "start_byte": 0,
+      "end_byte": 100,
+      "node_type": "File",
+      "docstring": null
+    }
+  ],
+  "edges": []
+}

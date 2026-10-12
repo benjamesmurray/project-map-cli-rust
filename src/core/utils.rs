@@ -3,13 +3,20 @@ use std::path::Path;
 pub fn path_to_fqn(root: &Path, path: &Path) -> String {
     let rel = path.strip_prefix(root).unwrap_or(path);
     let mut parts = Vec::new();
-    
+
     for component in rel.components() {
         let part = component.as_os_str().to_string_lossy();
-        if part == "__init__.py" || part == "mod.rs" || part == "lib.rs" || part == "index.ts" || part == "index.tsx" || part == "init.lua" {
+        if part == "__init__.py"
+            || part == "mod.rs"
+            || part == "lib.rs"
+            || part == "index.ts"
+            || part == "index.tsx"
+            || part == "init.lua"
+        {
             continue;
         }
-        let clean_part = part.trim_end_matches(".py")
+        let clean_part = part
+            .trim_end_matches(".py")
             .trim_end_matches(".rs")
             .trim_end_matches(".tsx")
             .trim_end_matches(".ts")
@@ -21,12 +28,12 @@ pub fn path_to_fqn(root: &Path, path: &Path) -> String {
             .trim_end_matches(".sql")
             .trim_end_matches(".vue")
             .trim_end_matches(".md");
-            
+
         if !clean_part.is_empty() {
             parts.push(clean_part.to_string());
         }
     }
-    
+
     parts.join(".")
 }
 
@@ -38,7 +45,7 @@ pub fn resolve_import_path(current_file: &str, import_specifier: &str) -> String
     let current_path = Path::new(current_file);
     let current_dir = current_path.parent().unwrap_or_else(|| Path::new(""));
     let mut resolved = current_dir.to_path_buf();
-    
+
     for part in import_specifier.split('/') {
         if part == "." {
             continue;
@@ -70,7 +77,14 @@ pub fn render_tree(paths: &[String], max_depth: usize) -> String {
         }
     }
 
-    fn render_node(node: &TreeNode, name: &str, prefix: &str, is_last: bool, depth: usize, max_depth: usize) -> String {
+    fn render_node(
+        node: &TreeNode,
+        name: &str,
+        prefix: &str,
+        is_last: bool,
+        depth: usize,
+        max_depth: usize,
+    ) -> String {
         if depth > max_depth {
             return "".to_string();
         }
@@ -90,7 +104,14 @@ pub fn render_tree(paths: &[String], max_depth: usize) -> String {
         let child_count = node.children.len();
         for (i, (child_name, child_node)) in node.children.iter().enumerate() {
             let is_child_last = i == child_count - 1;
-            output.push_str(&render_node(child_node, child_name, &new_prefix, is_child_last, depth + 1, max_depth));
+            output.push_str(&render_node(
+                child_node,
+                child_name,
+                &new_prefix,
+                is_child_last,
+                depth + 1,
+                max_depth,
+            ));
         }
 
         output
@@ -119,16 +140,83 @@ pub fn get_active_features(root: &Path) -> Vec<String> {
     active
 }
 
+/// Normalizes a relative or absolute path string relative to `root`.
+/// Strips leading `./`, converts backslashes to `/`, converts absolute paths within `root`
+/// to relative paths, and leaves non-root absolute paths unchanged.
+pub fn normalize_rel_path(root: &Path, p: &str) -> String {
+    let normalized = p.replace('\\', "/");
+    let trimmed = normalized.trim();
+
+    let p_path = Path::new(trimmed);
+    if p_path.is_absolute() {
+        if let Ok(rel) = p_path.strip_prefix(root) {
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            let s = rel_str.trim_start_matches("./");
+            if s.is_empty() || s == "." {
+                ".".to_string()
+            } else {
+                s.to_string()
+            }
+        } else if let Ok(canon_root) = root.canonicalize() {
+            if let Ok(rel) = p_path.strip_prefix(&canon_root) {
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let s = rel_str.trim_start_matches("./");
+                if s.is_empty() || s == "." {
+                    ".".to_string()
+                } else {
+                    s.to_string()
+                }
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        let mut s = trimmed;
+        while let Some(stripped) = s.strip_prefix("./") {
+            s = stripped;
+        }
+        if s.is_empty() || s == "." {
+            ".".to_string()
+        } else {
+            s.to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_rel_path() {
+        let root = Path::new("/root");
+        // Leading ./
+        assert_eq!(normalize_rel_path(root, "./a/b"), "a/b");
+        assert_eq!(normalize_rel_path(root, "././a/b"), "a/b");
+        // Already relative without ./
+        assert_eq!(normalize_rel_path(root, "a/b"), "a/b");
+        // Absolute path inside root
+        assert_eq!(normalize_rel_path(root, "/root/a/b"), "a/b");
+        assert_eq!(normalize_rel_path(root, "/root/./a/b"), "a/b");
+        // Current directory '.'
+        assert_eq!(normalize_rel_path(root, "."), ".");
+        assert_eq!(normalize_rel_path(root, "./"), ".");
+        // Windows-style separators
+        assert_eq!(normalize_rel_path(root, "a\\b\\c"), "a/b/c");
+        assert_eq!(normalize_rel_path(root, ".\\a\\b"), "a/b");
+        assert_eq!(normalize_rel_path(root, "/root\\a\\b"), "a/b");
+        // Absolute paths outside root
+        assert_eq!(normalize_rel_path(root, "/outside/a/b"), "/outside/a/b");
+    }
 
     #[test]
     fn test_path_to_fqn() {
         let root = Path::new("/project");
         let path = Path::new("/project/src/core/utils.py");
         assert_eq!(path_to_fqn(root, path), "src.core.utils");
-        
+
         let path2 = Path::new("/project/src/main.rs");
         assert_eq!(path_to_fqn(root, path2), "src.main");
 
@@ -148,7 +236,10 @@ mod tests {
     #[test]
     fn test_resolve_import_path() {
         assert_eq!(resolve_import_path("src/main.ts", "./utils"), "src/utils");
-        assert_eq!(resolve_import_path("src/core/parser.ts", "../utils"), "src/utils");
+        assert_eq!(
+            resolve_import_path("src/core/parser.ts", "../utils"),
+            "src/utils"
+        );
         assert_eq!(resolve_import_path("src/index.ts", "lodash"), "lodash");
     }
 
@@ -193,7 +284,11 @@ mod tests {
         let features = get_active_features(&temp_dir);
         assert_eq!(
             features,
-            vec!["feature_with_meta", "feature_with_spec", "feature_with_tasks"]
+            vec![
+                "feature_with_meta",
+                "feature_with_spec",
+                "feature_with_tasks"
+            ]
         );
 
         // Clean up

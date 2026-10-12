@@ -1,6 +1,6 @@
 [package]
 name = "project-map-cli-rust"
-version = "0.1.18"
+version = "0.2.0"
 edition = "2021"
 description = "High-performance architectural map generator for AI agents and developers."
 license = "MIT"
@@ -8,6 +8,19 @@ repository = "https://github.com/benjamesmurray/project-map-cli-rust"
 readme = "README.md"
 keywords = ["cli", "mcp", "tree-sitter", "architecture", "agent"]
 categories = ["development-tools"]
+exclude = [
+    "projects/",
+    "handover/",
+    "temp/",
+    ".project-map/",
+    "target/",
+    ".env",
+    ".git/",
+    ".agents/",
+    ".antigravity.md",
+    ".spec_last_used",
+    "*.json"
+]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -41,5 +54,9 @@ tracing-subscriber = "0.3"
 notify = "6.1"
 crossbeam-channel = "0.5"
 serde_yaml = "0.9"
+fs4 = "1.1.0"
 
 
+
+[dev-dependencies]
+tempfile = "3"
