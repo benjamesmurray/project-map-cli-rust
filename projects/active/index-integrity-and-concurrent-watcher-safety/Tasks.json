@@ -219,7 +219,7 @@
       "id": "5.G",
       "title": "Phase 5: Completion Checkpoint & Archive",
       "description": "Present the completion summary to the user and map each acceptance criterion 1-11 to its evidence (criterion 11 is pending until rollout). After user approval, archive the project with the spec workflow (sc_plan / deliver-cli plan).",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "5.3"
       ]
