@@ -14,6 +14,9 @@ pub enum AppError {
         source: serde_json::Error,
     },
 
+    #[error("Existing index has schema version {found}, newer than this build supports ({supported}); refusing to overwrite it. Upgrade project-map-cli-rust.")]
+    NewerIndex { found: u32, supported: u32 },
+
     #[error("Parser error: {0}")]
     Parser(String),
 

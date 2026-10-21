@@ -1,8 +1,16 @@
 use crate::error::Result;
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+
+/// Index schema written by this build. 3 adds documentation and API nodes.
+pub const SCHEMA_VERSION: u32 = 3;
+
+/// Shown by `status` and returned by every doc tool when the index predates schema 3.
+pub const STALE_INDEX_MESSAGE: &str = "STALE: Index predates documentation indexing (schema < 3). \
+Code tools still work; rebuild with `project-map refresh` or the MCP `init` tool to enable doc tools.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum NodeType {
@@ -16,6 +24,12 @@ pub enum NodeType {
     DatabaseTable,
     #[serde(alias = "config_env_var")]
     ConfigEnvVar,
+    #[serde(alias = "doc_section")]
+    DocSection,
+    #[serde(alias = "api_operation")]
+    ApiOperation,
+    #[serde(alias = "api_schema")]
+    ApiSchema,
     #[serde(other)]
     Unknown,
 }
@@ -75,7 +89,17 @@ pub struct EntityMatch {
     pub preview: Option<SnippetPreview>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl NodeType {
+    /// Documentation and API nodes, counted separately from code symbols.
+    pub fn is_doc(&self) -> bool {
+        matches!(
+            self,
+            NodeType::DocSection | NodeType::ApiOperation | NodeType::ApiSchema
+        )
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexMeta {
     pub schema_version: u32,
     pub tool_version: String,
@@ -85,6 +109,47 @@ pub struct IndexMeta {
     pub file_count: usize,
     pub symbol_count: usize,
     pub edge_count: usize,
+    // Schema 3 doc counts; absent (zero) in schema-2 indexes.
+    #[serde(default)]
+    pub doc_file_count: usize,
+    #[serde(default)]
+    pub section_count: usize,
+    #[serde(default)]
+    pub reference_count: usize,
+    #[serde(default)]
+    pub unresolved_mention_count: usize,
+    #[serde(default)]
+    pub ambiguous_mention_count: usize,
+    #[serde(default)]
+    pub api_operation_count: usize,
+}
+
+/// Recognised YAML frontmatter of a Markdown file.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DocMeta {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub supersedes: Vec<String>,
+}
+
+/// A recurring documentation term within one directory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DocTerm {
+    pub term: String,
+    pub count: u32,
+    /// (path, anchor) of the sections it occurs in, capped.
+    pub sections: Vec<(String, String)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,12 +158,27 @@ struct SerializableGraph {
     meta: Option<IndexMeta>,
     nodes: Vec<NodeData>,
     edges: Vec<(usize, usize, EdgeType)>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    doc_meta: BTreeMap<String, DocMeta>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    doc_terms: BTreeMap<String, Vec<DocTerm>>,
+}
+
+/// Reads only the meta block; nodes and edges are skipped.
+#[derive(Deserialize)]
+struct MetaOnly {
+    #[serde(default)]
+    meta: Option<IndexMeta>,
 }
 
 #[derive(Debug)]
 pub struct ProjectGraph {
     pub graph: DiGraph<NodeData, EdgeType>,
     pub meta: Option<IndexMeta>,
+    /// Frontmatter keyed by normalised file path.
+    pub doc_meta: BTreeMap<String, DocMeta>,
+    /// Terms keyed by normalised directory.
+    pub doc_terms: BTreeMap<String, Vec<DocTerm>>,
 }
 
 impl Default for ProjectGraph {
@@ -112,7 +192,17 @@ impl ProjectGraph {
         Self {
             graph: DiGraph::new(),
             meta: None,
+            doc_meta: BTreeMap::new(),
+            doc_terms: BTreeMap::new(),
         }
+    }
+
+    /// True for a legacy index (no meta) or one written with schema < 3.
+    /// Such an index is still served read-only; it is never rewritten here.
+    pub fn is_stale(&self) -> bool {
+        self.meta
+            .as_ref()
+            .is_none_or(|m| m.schema_version < SCHEMA_VERSION)
     }
 
     pub fn add_node(&mut self, data: NodeData) -> NodeIndex {
@@ -139,6 +229,8 @@ impl ProjectGraph {
             meta: self.meta.clone(),
             nodes,
             edges,
+            doc_meta: self.doc_meta.clone(),
+            doc_terms: self.doc_terms.clone(),
         };
         let json = serde_json::to_string_pretty(&serializable)?;
         Self::save_atomic_with_hook(path, &json, |_| Ok(()))
@@ -188,6 +280,14 @@ impl ProjectGraph {
         Ok(())
     }
 
+    /// Schema version of the index at `path`, or None if it is missing,
+    /// unreadable, corrupt or has no meta block.
+    pub fn read_schema_version(path: &Path) -> Option<u32> {
+        let json = fs::read_to_string(path).ok()?;
+        let parsed: MetaOnly = serde_json::from_str(&json).ok()?;
+        parsed.meta.map(|m| m.schema_version)
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let json = fs::read_to_string(path)?;
         let serializable: SerializableGraph =
@@ -208,6 +308,8 @@ impl ProjectGraph {
         Ok(Self {
             graph,
             meta: serializable.meta,
+            doc_meta: serializable.doc_meta,
+            doc_terms: serializable.doc_terms,
         })
     }
 }
@@ -410,6 +512,195 @@ mod tests {
             .expect("0.1.18 reader must successfully parse 0.2.0 index with meta");
         assert_eq!(old_reader.nodes.len(), 1);
         assert_eq!(old_reader.edges.len(), 0);
+    }
+
+    #[test]
+    fn test_doc_node_types_round_trip() {
+        for (variant, pascal, snake) in [
+            (NodeType::DocSection, "\"DocSection\"", "\"doc_section\""),
+            (
+                NodeType::ApiOperation,
+                "\"ApiOperation\"",
+                "\"api_operation\"",
+            ),
+            (NodeType::ApiSchema, "\"ApiSchema\"", "\"api_schema\""),
+        ] {
+            assert_eq!(serde_json::to_string(&variant).unwrap(), pascal);
+            assert_eq!(serde_json::from_str::<NodeType>(pascal).unwrap(), variant);
+            assert_eq!(serde_json::from_str::<NodeType>(snake).unwrap(), variant);
+            assert!(variant.is_doc());
+        }
+        assert!(!NodeType::Symbol.is_doc());
+        assert!(!NodeType::File.is_doc());
+    }
+
+    #[test]
+    fn test_schema_2_meta_without_doc_counts_defaults_to_zero() {
+        let v2_json = r#"{
+            "meta": {
+                "schema_version": 2,
+                "tool_version": "0.2.0",
+                "root": "/opt/project",
+                "built_at": "2026-10-12T15:00:00Z",
+                "builder_pid": 12345,
+                "file_count": 1,
+                "symbol_count": 1,
+                "edge_count": 0
+            },
+            "nodes": [],
+            "edges": []
+        }"#;
+
+        let graph: SerializableGraph =
+            serde_json::from_str(v2_json).expect("Schema-2 index must parse");
+        let meta = graph.meta.expect("meta present");
+        assert_eq!(meta.schema_version, 2);
+        assert_eq!(meta.doc_file_count, 0);
+        assert_eq!(meta.section_count, 0);
+        assert_eq!(meta.reference_count, 0);
+        assert_eq!(meta.unresolved_mention_count, 0);
+        assert_eq!(meta.ambiguous_mention_count, 0);
+        assert_eq!(meta.api_operation_count, 0);
+        assert!(graph.doc_meta.is_empty(), "missing side table must default");
+        assert!(
+            graph.doc_terms.is_empty(),
+            "missing side table must default"
+        );
+    }
+
+    fn sample_v3_graph() -> ProjectGraph {
+        let mut g = ProjectGraph::new();
+        let file = g.add_node(NodeData {
+            path: "docs/adr/004.md".to_string(),
+            name: "docs.adr.004".to_string(),
+            kind: "file".to_string(),
+            line: 1,
+            start_byte: 0,
+            end_byte: 0,
+            node_type: NodeType::File,
+            docstring: None,
+            role: None,
+        });
+        let section = g.add_node(NodeData {
+            path: "docs/adr/004.md".to_string(),
+            name: "Decision".to_string(),
+            kind: "h2".to_string(),
+            line: 5,
+            start_byte: 40,
+            end_byte: 120,
+            node_type: NodeType::DocSection,
+            docstring: None,
+            role: Some("decision".to_string()),
+        });
+        g.add_edge(file, section, EdgeType::Contains);
+        g.meta = Some(IndexMeta {
+            schema_version: SCHEMA_VERSION,
+            tool_version: "0.3.0".to_string(),
+            section_count: 1,
+            ..Default::default()
+        });
+        g.doc_meta.insert(
+            "docs/adr/004.md".to_string(),
+            DocMeta {
+                id: Some("ADR-004".to_string()),
+                tags: vec!["audit".to_string()],
+                supersedes: vec!["ADR-001".to_string()],
+                ..Default::default()
+            },
+        );
+        g.doc_terms.insert(
+            "docs/adr".to_string(),
+            vec![DocTerm {
+                term: "Casting Director".to_string(),
+                count: 2,
+                sections: vec![("docs/adr/004.md".to_string(), "decision".to_string())],
+            }],
+        );
+        g
+    }
+
+    #[test]
+    fn test_v3_side_tables_round_trip_through_save_and_load() {
+        use tempfile::tempdir;
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("index.json");
+
+        let original = sample_v3_graph();
+        original.save(&path).expect("save");
+        let loaded = ProjectGraph::load(&path).expect("load");
+
+        assert_eq!(loaded.meta, original.meta);
+        assert_eq!(loaded.doc_meta, original.doc_meta);
+        assert_eq!(loaded.doc_terms, original.doc_terms);
+        assert_eq!(
+            loaded.graph[NodeIndex::new(1)].node_type,
+            NodeType::DocSection
+        );
+    }
+
+    #[test]
+    fn test_forward_compatibility_0_2_0_reader_with_v3_index() {
+        // Copies of the 0.2.0 types (no doc variants, fields or side tables)
+        #[derive(Deserialize, Debug, PartialEq)]
+        enum V020NodeType {
+            File,
+            Symbol,
+            KafkaTopic,
+            DatabaseTable,
+            ConfigEnvVar,
+            #[serde(other)]
+            Unknown,
+        }
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct V020NodeData {
+            path: String,
+            name: String,
+            kind: String,
+            line: usize,
+            start_byte: usize,
+            end_byte: usize,
+            node_type: V020NodeType,
+            docstring: Option<String>,
+            #[serde(default)]
+            role: Option<String>,
+        }
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct V020IndexMeta {
+            schema_version: u32,
+            tool_version: String,
+            root: String,
+            built_at: String,
+            builder_pid: u32,
+            file_count: usize,
+            symbol_count: usize,
+            edge_count: usize,
+        }
+        #[derive(Deserialize)]
+        struct V020SerializableGraph {
+            #[serde(default)]
+            meta: Option<V020IndexMeta>,
+            nodes: Vec<V020NodeData>,
+            edges: Vec<(usize, usize, EdgeType)>,
+        }
+
+        use tempfile::tempdir;
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("index.json");
+        sample_v3_graph().save(&path).expect("save");
+
+        let json = fs::read_to_string(&path).unwrap();
+        let old_reader: V020SerializableGraph =
+            serde_json::from_str(&json).expect("0.2.0 reader must parse a v3 index");
+        assert_eq!(old_reader.meta.unwrap().schema_version, SCHEMA_VERSION);
+        assert_eq!(old_reader.nodes[0].node_type, V020NodeType::File);
+        assert_eq!(
+            old_reader.nodes[1].node_type,
+            V020NodeType::Unknown,
+            "DocSection must map to Unknown for a 0.2.0 reader"
+        );
+        assert_eq!(old_reader.edges.len(), 1);
     }
 
     #[test]

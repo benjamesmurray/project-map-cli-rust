@@ -1,4 +1,4 @@
-use crate::core::graph::{EdgeType, IndexMeta, NodeData, NodeType, ProjectGraph};
+use crate::core::graph::{EdgeType, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION};
 use crate::core::parser::CodeParser;
 use crate::core::utils::{normalize_rel_path, path_to_fqn, resolve_import_path};
 use crate::error::Result;
@@ -249,12 +249,12 @@ impl Orchestrator {
             .graph
             .graph
             .node_weights()
-            .filter(|n| n.node_type != NodeType::File)
+            .filter(|n| n.node_type != NodeType::File && !n.node_type.is_doc())
             .count();
         let edge_count = self.graph.graph.edge_count();
 
         self.graph.meta = Some(IndexMeta {
-            schema_version: 2,
+            schema_version: SCHEMA_VERSION,
             tool_version: env!("CARGO_PKG_VERSION").to_string(),
             root: canonical_root,
             built_at,
@@ -262,6 +262,7 @@ impl Orchestrator {
             file_count,
             symbol_count,
             edge_count,
+            ..Default::default()
         });
 
         Ok(())
@@ -349,6 +350,8 @@ impl Orchestrator {
         use std::fs;
         use std::time::{SystemTime, UNIX_EPOCH};
 
+        ensure_index_not_newer(base_dir)?;
+
         let pid = std::process::id();
         let timestamp = Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
         let backup_dir_name = format!("{}_{}", timestamp, pid);
@@ -433,6 +436,19 @@ impl Orchestrator {
     }
 }
 
+/// Forward guard: refuse to replace an index written by a newer schema.
+/// A missing or corrupt index does not trigger it.
+pub fn ensure_index_not_newer(out_dir: &Path) -> Result<()> {
+    let current = out_dir.join("latest").join(".project-map.json");
+    match ProjectGraph::read_schema_version(&current) {
+        Some(found) if found > SCHEMA_VERSION => Err(crate::error::AppError::NewerIndex {
+            found,
+            supported: SCHEMA_VERSION,
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// Rebuild the index and publish it atomically under IndexLock.
 /// Returns the newly loaded QueryEngine.
 pub fn rebuild_and_publish(
@@ -444,6 +460,7 @@ pub fn rebuild_and_publish(
     use std::time::Duration;
 
     let _lock = IndexLock::acquire(out_dir, Duration::from_secs(30))?;
+    ensure_index_not_newer(out_dir)?;
     let mut orch = Orchestrator::new();
     let _ = orch.scaffold_if_empty(root, out_dir)?;
     orch.build_index(root, out_dir)?;

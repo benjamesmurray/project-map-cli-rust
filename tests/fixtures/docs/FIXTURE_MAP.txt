@@ -1,0 +1,96 @@
+Docs fixture map (doc-and-spec-indexing, task 1.2)
+==================================================
+
+Not indexed (.txt is unsupported), so it does not change any counts.
+
+Path rules: index paths keep the build root as a prefix
+(e.g. tests/fixtures/docs/src/audit/log.rs when built with root
+tests/fixtures/docs). Plain and qualified paths in docs are written
+relative to the index root (src/audit/log.rs); Markdown links are
+relative to the document's own directory (../src/audit/log.rs).
+Resolution in task 4.2 must handle both.
+
+Names used here must not collide with the other fixtures' asserted
+names (User, Greeter, Calculator, global_function, ...).
+
+Code tree (src/)
+----------------
+src/audit/log.rs        struct AuditLog; impl AuditLog { new (l7), append (l11-13) };
+                        rotate_segments (unique bare name); verify_chain.
+                        Line 1 is a doc comment outside any symbol.
+src/audit/retention.rs  struct RetentionPolicy; impl RetentionPolicy { new, apply };
+                        flush_buffer (duplicate bare name, also in invoice.py).
+src/billing/invoice.py  class InvoiceService { issue, run }; class RetentionPolicy
+                        { apply } (makes RetentionPolicy::apply ambiguous);
+                        flush_buffer.
+
+docs/guide.md  (tasks 2.1, 2.2, 2.5)
+-------------
+- Text before the first heading.
+- h1 -> h2 -> h3 -> h4 nesting; "Skipped From H1" is an h3 under an h1.
+- Duplicate anchors: Usage, Usage, Usage 1, Usage
+  -> usage, usage-1, usage-1-1, usage-2 (github-slugger behaviour).
+- Punctuation/inline code/emoji heading
+  "Step 2: Configure `AuditLog` (fast!) 🚀" -> step-2-configure-auditlog-fast-
+- Non-ASCII heading "Überblick & Café" -> überblick--café
+- Setext h2 "Setext Heading Level Two".
+- "# Not A Heading" inside fenced code is not a section.
+- Terms: Casting Director, Audit Service (also as link text), Compliance
+  Officer (after stripping "The"), bold "ledger"; "This Week" reduces to one
+  word and is dropped; "Release Manager" occurs once and is dropped; a
+  6-word capitalised run appears twice (split rule decided in 2.5); a
+  5-word bold span is ignored; terms in headings, inline code and fenced
+  code do not count.
+
+docs/links.md  (tasks 2.4, 4.2, 4.3, 4.4)
+-------------
+- Mention before the first heading (decision recorded in 2.4).
+- Rule 1 Markdown links: relative + fragment (linked), doc-to-doc link
+  (linked to guide.md), external https / mailto / pure #anchor (ignored),
+  leaving the index root (unresolved), missing target (unresolved).
+- Rule 2 paths: plain, './' prefixed (linked), missing (unresolved).
+- Rule 3: src/audit/log.rs::append (linked to append), src/audit/log.rs:12
+  (innermost symbol append), src/audit/log.rs:1 (falls back to the file).
+- Rule 4: AuditLog::append and AuditLog.new (linked via impl range);
+  RetentionPolicy::apply (ambiguous: Rust and Python).
+- Rule 5: rotate_segments (linked), flush_buffer (ambiguous), new
+  (denylisted), run (under 4 chars), does_not_exist (unresolved).
+- Fenced code: AuditLog::new, verify_chain, src/audit/retention.rs.
+- Deepest-section attribution: mentions under "### Paths" belong to that
+  h3 only, never to "## Code Spans" or "# Link Coverage".
+
+docs/adr/  (tasks 2.3, 5.x user stories)
+----------
+004-immutable-audit-log.md  every recognised key; tags as a list;
+                            supersedes as a scalar; an unknown key (owner);
+                            quoted date. Mentions AuditLog::append and
+                            src/audit/log.rs::append (user story 3).
+005-retention.md            numeric id; YAML-typed date; tags as a scalar;
+                            supersedes as a list; a later '---' thematic
+                            break that is not frontmatter.
+006-malformed.md            malformed frontmatter: no DocMeta, sections
+                            still indexed.
+
+api/ and config/  (tasks 3.1, 3.2, 3.3)
+----------------
+api/openapi.yaml        OpenAPI 3 by name: GET/POST /entries, GET
+                        /entries/{id}; non-method keys (parameters, $ref)
+                        ignored; schemas AuditEntry, AuditPage.
+api/swagger.json        Swagger 2 by name: GET/PUT /invoices (PUT has no
+                        operationId), DELETE /invoices/{id}; definitions
+                        Invoice.
+api/billing-api.yml     detected by content: BOM + comments before a
+                        top-level openapi key; PATCH and TRACE operations.
+api/empty-openapi.json  detected by content, no paths: zero operations.
+config/settings.yaml    nested openapi key: NOT OpenAPI; keeps its generic
+                        YAML symbols.
+>1 MB JSON              generated at test runtime in a tempdir (3.1);
+                        never committed.
+
+Snapshot for 3.3 (0.2.0 output, generic YAML extraction)
+--------------------------------------------------------
+config/settings.yaml symbols (name kind line): openapi config 1, service
+config 2, name config 3, database config 5, url config 6. 3.3 must leave
+this unchanged. Note: the 0.2.0 YAML extractor locates keys by first text
+match, so some lines are wrong (openapi at line 1 matches the comment).
+That is an existing bug, out of scope for this feature.

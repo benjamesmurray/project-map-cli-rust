@@ -1,0 +1,16 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Billing API", "version": "1.0" },
+  "paths": {
+    "/invoices": {
+      "get": { "operationId": "listInvoices", "summary": "List invoices" },
+      "put": { "summary": "Replace invoices" }
+    },
+    "/invoices/{id}": {
+      "delete": { "operationId": "deleteInvoice" }
+    }
+  },
+  "definitions": {
+    "Invoice": { "type": "object" }
+  }
+}

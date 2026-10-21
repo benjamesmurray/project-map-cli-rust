@@ -1,4 +1,4 @@
-use crate::core::graph::{EntityMatch, NodeData, NodeType};
+use crate::core::graph::{EntityMatch, NodeData, NodeType, STALE_INDEX_MESSAGE};
 use crate::core::query_engine::QueryEngine;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -272,6 +272,10 @@ impl ToonFormatter {
                 output.push_str(&format!("Symbols: {}\n", symbol_count));
                 output.push_str(&format!("Edges: {}\n", edge_count));
                 output.push_str("WARNING: Legacy index without metadata block.\n");
+            }
+            if engine.is_stale() {
+                output.push_str(STALE_INDEX_MESSAGE);
+                output.push('\n');
             }
 
             // Warnings checks

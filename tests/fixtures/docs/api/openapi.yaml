@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: Audit API
+  version: 1.0.0
+paths:
+  /entries:
+    parameters:
+      - name: tenant
+        in: header
+    get:
+      operationId: listEntries
+      summary: List audit entries
+    post:
+      operationId: appendEntry
+      summary: Append an audit entry
+  /entries/{id}:
+    get:
+      operationId: getEntry
+    $ref: '#/components/pathItems/Shared'
+components:
+  schemas:
+    AuditEntry:
+      type: object
+    AuditPage:
+      type: object

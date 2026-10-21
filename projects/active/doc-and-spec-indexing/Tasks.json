@@ -1,0 +1,327 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Phase 1: Baseline Measurements (0.2.0)",
+      "description": "Before any code change, with the 0.2.0 build: time a full refresh and record the index size and file/symbol/edge counts for this repository and for /opt/wde (median of 3 runs each, same machine, release build). Write them to projects/active/doc-and-spec-indexing/reports/baseline.md with the command lines used, so 7.1 can compare like for like (Verification 5). Done when the report exists with both repositories.",
+      "status": "completed",
+      "dependencies": []
+    },
+    {
+      "id": "1.2",
+      "title": "Phase 1: Docs Fixture Tree",
+      "description": "Create tests/fixtures/docs/ used by every later test: (a) Markdown with h1-h6 nesting, duplicate headings, a heading with punctuation/emoji/code for slug tests; (b) ADRs with YAML frontmatter covering every recognised key, tags and supersedes as both scalar and list, and one malformed frontmatter block; (c) docs mentioning code via relative Markdown links (with #fragments), external URLs, plain paths (with and without './'), path::sym, path:line, Type::method, Type.method, a unique bare name, a duplicated bare name, a denylisted name, a name under 4 characters, and mentions inside fenced code; (d) a small code tree they reference (Rust with a struct plus impl block, plus one other language) including the duplicated bare name; (e) openapi.yaml, swagger.json, a YAML file with a top-level openapi key under another name, a non-OpenAPI YAML file, and a test that generates a >1 MB JSON file at runtime with an openapi key (do not commit it); (f) prose for term extraction: repeated capitalised runs, leading stopwords, bold terms, terms occurring once, terms in headings and code that must not count. Add a README.md in the fixture dir listing which file exercises which rule. Done when the fixture exists and existing tests still pass (cargo test).",
+      "status": "completed",
+      "dependencies": []
+    },
+    {
+      "id": "1.3",
+      "title": "Phase 1: Schema v3 Data Model",
+      "description": "In src/core/graph.rs: add NodeType::DocSection, ApiOperation, ApiSchema (keeping the snake_case serde aliases pattern and #[serde(other)] Unknown); add DocMeta (id, title, status, date, domain, tags, supersedes) and DocTerm (term, count, sections: Vec<(path, anchor)>); add side tables doc_meta: BTreeMap<String, DocMeta> and doc_terms: BTreeMap<String, Vec<DocTerm>> to the graph and SerializableGraph, both #[serde(default)]; add #[serde(default)] IndexMeta fields doc_file_count, section_count, reference_count, unresolved_mention_count, ambiguous_mention_count, api_operation_count; bump the written schema_version to 3 (orchestrator.rs and any fixture/test helpers). Tests: new variants round-trip; a schema-2 meta block without the new fields deserialises with zeros; an index without side tables loads; a 0.2.0-shaped struct (as in test_forward_compatibility_0_2_0_with_0_1_18_struct) can deserialise a v3 index, mapping new node types to Unknown. cargo test passes.",
+      "status": "completed",
+      "dependencies": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Phase 1: Stale-Index Detection on Load",
+      "description": "Graph::load / QueryEngine expose whether the index is stale: no meta block, or schema_version < 3. The index is still loaded read-only and existing code tools keep working. status prints a stale line telling the user to run refresh (alongside the existing WARNING logic). Provide one shared stale message string for the doc tools to reuse in 5.7. Tests (Verification 3a): a v2 fixture and the legacy no-meta fixture each load, are reported stale by status, and after running status/query/search the index file bytes and mtime are unchanged and no backup or temp files appear in the out dir. cargo test passes.",
+      "status": "completed",
+      "dependencies": [
+        "1.3"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Phase 1: Forward Guard (NewerIndex)",
+      "description": "Add AppError::NewerIndex { found, supported } in src/error.rs. In build_index, before writing (after taking the single-writer lock), read the existing latest index meta; if its schema_version is greater than ours, return NewerIndex and leave latest/ untouched. The watcher logs the error and skips the rebuild without exiting or replacing its engine. An unreadable/corrupt existing index does not trigger the guard (keep current 0.2.0 behaviour). Tests (Verification 3b): building into an out dir holding a schema_version 4 index fails with NewerIndex and the file is byte-identical afterwards; same for a watcher-triggered rebuild (watcher_test.rs); building over a v2 or v3 index succeeds. cargo test passes.",
+      "status": "completed",
+      "dependencies": [
+        "1.3"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Phase 2: docs.rs Skeleton and Section Tree",
+      "description": "Add pulldown-cmark to Cargo.toml and create src/core/docs.rs (registered in core/mod.rs) with parse_markdown(path, text) -> DocOutline { meta, sections, mentions, term_candidates }. Build sections from heading events: name = heading text (inline code/emphasis flattened), kind h1..h6, 1-based line, start_byte at the heading, end_byte at the next heading of the same or higher level or EOF, and a parent index so the tree is file -> top sections -> subsections. Frontmatter bytes are excluded from section ranges but byte offsets stay relative to the original file. Unit tests on fixtures: ranges nest correctly, skipped levels (h1 then h3), text before the first heading, setext headings, headings inside fenced code are not sections. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Phase 2: GitHub Anchor Slugs",
+      "description": "Implement the GitHub slug algorithm (lowercase, drop punctuation except '-' and '_', spaces to '-', keep unicode letters/digits) and duplicate handling per file: first 'foo', then 'foo-1', 'foo-2'. Store in the section's anchor (role). Unit tests: punctuation, inline code in heading, emoji, non-ASCII, three duplicate headings giving foo / foo-1 / foo-2, and a heading whose slug collides with an earlier suffixed slug. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Phase 2: Frontmatter to DocMeta",
+      "description": "Detect a leading '---' YAML block, parse with serde_yaml into DocMeta: id, title, status, date (string as written, also when YAML types it as a date or number), domain, tags and supersedes as scalar or list (both -> Vec<String>). Unknown keys ignored. Malformed YAML yields no DocMeta, does not fail the file, and the block is still excluded from sections. Unit tests for every key, scalar vs list for tags and supersedes, numeric id, missing frontmatter, malformed frontmatter, '---' used later as a thematic break (not frontmatter). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Phase 2: Mention Collection",
+      "description": "During the event walk, collect raw mentions with byte offsets and attribute each to the DEEPEST section whose range contains it (none if before the first heading: attribute to the file-level pseudo section or drop, decide and document). Kinds: MarkdownLink (relative targets only; strip #fragment and query; skip http(s), mailto and pure #anchor links), CodeSpan (inline code), FencedCode (identifier-like tokens and path-like tokens from fenced blocks, including path::sym, path:line and Type::method / Type.method forms). Classification into rule forms happens here (Path, PathSymbol, PathLine, TypeMember, BareName); resolution happens in 4.2/4.3. Unit tests: each fixture mention kind is collected with the right form, external links ignored, a mention in an h3 under an h2 is attributed to the h3 only. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Phase 2: Term Candidate Extraction",
+      "description": "Collect term candidates from paragraph and list-item text only (not headings, code spans, fenced code, link URLs, or frontmatter): runs of 2-4 consecutive capitalised words after stripping leading stopwords (The, A, An, This, That, These, Those, Our, Each, Every, When, If, In, For, plus a documented short list); a run reduced below 2 words by stripping is dropped; bold spans of 1-4 words. Collapse whitespace, keep case. Record (term, section anchor, byte offset) per occurrence. Unit tests: stopword stripping, run longer than 4 words (document the split rule), bold single word, bold over 4 words ignored, capitalised words in headings and code ignored, link text counted but URLs not. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Phase 3: OpenAPI Detection",
+      "description": "docs::is_openapi(path, head_bytes, size): true if the file name is openapi.yaml/yml/json or swagger.* ; otherwise for .yaml/.yml/.json files of at most 1 MB, look at the first 1 KB after a BOM, whitespace and YAML comments for a top-level openapi or swagger key (YAML key at column 0, or JSON key at the top-level object). Files over 1 MB are never read beyond what the name check needs. Unit tests: each fixture positive, a non-OpenAPI YAML, a nested openapi key (negative), BOM-prefixed file, the runtime-generated >1 MB JSON returns false without a full read (assert via the head-bytes API, not by timing). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Phase 3: OpenAPI Extraction",
+      "description": "docs::parse_openapi(value) -> Option<ApiOutline> from serde_yaml / serde_json values (no full OpenAPI model). Operations: for each paths entry and each HTTP method key (get, put, post, delete, options, head, patch, trace), name 'METHOD /path', with operationId and summary when present, and line/byte location where obtainable (fall back to the file start; document). Schemas: components.schemas keys (OpenAPI 3) and definitions keys (Swagger 2). Ignore non-method path keys (parameters, servers, $ref). Unit tests on the YAML and JSON fixtures: exact operation list, operationId and summary, schema names, a spec with no paths. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "3.1"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Phase 3: OpenAPI Files Skip Generic YAML Extraction",
+      "description": "In src/core/parser.rs, when is_openapi is true for a YAML file, skip extract_yaml_symbols (and any generic JSON handling) so the file produces only the file node here; API nodes come from the doc pass in 4.1. Non-OpenAPI YAML is unchanged. Tests (Verification 2): indexing the fixture openapi.yaml yields zero generic YAML symbols for it; a non-OpenAPI YAML fixture yields the same symbols as before this change (compare against current output). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "3.1"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Phase 4: Doc Pass in the Orchestrator",
+      "description": "After the code pass in build_index, run the doc pass: for each indexed .md file, parse_markdown and add DocSection nodes (path, name, kind, line, start_byte, end_byte, role = anchor, docstring None) with Contains edges file -> top sections -> subsections; store DocMeta in doc_meta keyed by normalised path. For each OpenAPI file, add ApiOperation nodes (name 'METHOD /path', operationId/summary carried in role/docstring as documented) and ApiSchema nodes, with Contains edges from the file. Section text is not stored. Respect output-dir exclusion and path normalisation from 0.2.0. Integration test on tests/fixtures/docs: expected section count and tree, anchors, DocMeta entries, API node counts, and index JSON contains no section body text (assert a unique sentence from the fixture is absent). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.3",
+        "2.2",
+        "2.3",
+        "3.2",
+        "3.3"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Phase 4: Mention Resolution Rules 1-3",
+      "description": "docs::resolve_mention(mention, tables) -> Resolution { Linked(targets) | Unresolved | Ambiguous }, with tables built once per build (normalised path -> file node; per-file name -> symbol nodes; per-file line -> innermost symbol by range). Rule 1 MarkdownLink: resolve relative to the document's directory, normalise, link if an indexed file. Rule 2 Path: './' and plain forms normalise identically; file edge if indexed. Rule 3 PathSymbol (path::sym): resolve path then the named symbol in that file (Ambiguous if the file has more than one); PathLine (path:N): innermost symbol whose line range contains N, else the file. Unit tests for every fixture case including missing files (Unresolved) and '..' links leaving the repo (Unresolved). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.4",
+        "4.1"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Phase 4: Mention Resolution Rules 4-5",
+      "description": "Rule 4 TypeMember (Type::method, Type.method): candidates are symbols named by the last segment whose byte range lies inside a symbol named by the preceding segment in the same file (the index has no symbol->symbol Contains edges; Rust impl blocks are indexed under the type's name). Link only if exactly one candidate; more is Ambiguous; none is Unresolved. Rule 5 BareName: link only if exactly one symbol in the whole index has the name, the name is at least 4 characters, and it is not in the denylist (new, main, default, init, run, test, self, build, get, set, plus a documented short list); otherwise Ambiguous (multiple) or Unresolved. Rules apply in order; the first rule that matches the mention's form decides. Unit tests: Graph::load-style member resolved via impl range, duplicated bare name Ambiguous, denylisted and short names not linked, a type-qualified name where the type exists in two files is Ambiguous. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.2"
+      ]
+    },
+    {
+      "id": "4.4",
+      "title": "Phase 4: Link Pass and Mention Counts",
+      "description": "After the doc pass, resolve every collected mention and add References edges from the attributed (deepest) DocSection to each linked file or symbol, deduplicating identical edges. Count Unresolved and Ambiguous mentions for the meta block. Integration test (Verification 1): on the fixture index, the expected References edges exist from the expected sections; no ancestor section carries a child's edge; unresolved and ambiguous totals match hand-counted fixture values. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.3"
+      ]
+    },
+    {
+      "id": "4.5",
+      "title": "Phase 4: Term Aggregation per Directory",
+      "description": "Aggregate term candidates per directory (the doc file's parent directory, normalised): keep terms occurring at least twice in that directory; order by count descending then term ascending; keep at most 50; for each keep at most 5 (path, anchor) sections, the first by path then byte offset, deduplicated. Store in doc_terms. Unit and integration tests: once-only term dropped, ordering tie-break, cap of 50 with a generated fixture of 60 terms, cap of 5 sections, deterministic output across two builds (byte-identical doc_terms). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.5",
+        "4.1"
+      ]
+    },
+    {
+      "id": "4.6",
+      "title": "Phase 4: Index Meta Doc Counts and Status",
+      "description": "Populate doc_file_count, section_count, reference_count, unresolved_mention_count, ambiguous_mention_count and api_operation_count in IndexMeta. status prints them (doc files, sections, references, unresolved and ambiguous mentions, API operations). Existing degenerate-index WARNING logic unaffected. Test: status on the fixture index shows the expected numbers; status on a v2 index shows the stale line instead of doc counts. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.4",
+        "4.4"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Phase 5: Shared TOON Truncation Rule",
+      "description": "In src/core/toon.rs, one helper used by every new formatter: cap output at a given character budget (default 4000), cut on a line or char boundary (never mid UTF-8), and append a single explicit marker stating that output was truncated and how to see more (e.g. raise max_chars or narrow the query). Unit tests: under budget unchanged, over budget truncated with marker, multibyte text at the boundary. cargo test passes.",
+      "status": "pending",
+      "dependencies": []
+    },
+    {
+      "id": "5.2",
+      "title": "Phase 5: search_docs",
+      "description": "QueryEngine::search_docs(query, limit=10): rank DocSection nodes by the existing keyword/topic scoring extended to heading text and section text (section text read on demand from disk by byte range, never from the index), plus frontmatter id, title and tags scoring toward the file's first section. Each hit: path, anchor, heading and a two-line snippet. TOON formatter with truncation. Tests (user story 1): doc_search('audit log') on the fixture returns the expected sections in the expected order with path, anchor and snippet; a frontmatter-only match (title/tag/id) surfaces the file's first section; limit is honoured; a file changed on disk after indexing does not crash (snippet best effort). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.3",
+      "title": "Phase 5: doc_outline",
+      "description": "QueryEngine::doc_outline(path): heading tree with anchors (indented by depth) plus the file's DocMeta when present; path accepts './x', 'x' and absolute forms. Unknown or non-Markdown path returns a clear error. TOON formatter with truncation. Tests: fixture ADR outline including frontmatter, nested tree indentation, path variants identical, unknown path message. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.4",
+      "title": "Phase 5: doc_section",
+      "description": "QueryEngine::doc_section(path, anchor, max_chars=4000): read the section's byte range from disk on demand (like fetch_symbol) and return raw text, truncated via 5.1 with the marker. Unknown anchor returns an error listing the file's anchors (capped). If the file changed and the range is out of bounds or not on a char boundary, return a clear stale-range message suggesting refresh. Tests: exact text for a fixture section, nested section includes its subsections, truncation marker at a small max_chars, unknown anchor, stale range after the fixture copy is edited. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.5",
+      "title": "Phase 5: doc_links",
+      "description": "QueryEngine::doc_links(path, symbol?): for a code file (optionally a symbol in it), list the DocSections with References edges to it (code -> docs: path, anchor, heading); for a Markdown file, list each of its sections with the files and symbols it references (docs -> code). Path variants normalised. TOON formatter with truncation. Tests (user story 3) on fixture equivalents of doc_links(path='src/audit/log.rs', symbol='append') and doc_links(path='docs/adr/004.md'): exact expected lists in both directions; a file with no links returns an explicit empty result. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.4",
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.6",
+      "title": "Phase 5: doc_terms and api_surface",
+      "description": "QueryEngine::doc_terms(path_prefix?, limit=30): merge stored per-directory terms under the prefix (all when omitted), re-sum counts, re-order by count desc then term asc, keep 5 sections per term, apply limit. QueryEngine::api_surface(path?): for each OpenAPI file (or the one given), 'METHOD /path (operationId)' lines with summary, then schema names. TOON formatters with truncation. Tests (user story 4): api_surface on the fixtures lists the exact operations and schemas for YAML and JSON specs; doc_terms with and without a prefix, limit honoured, deterministic ordering. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.5",
+        "4.1",
+        "5.1"
+      ]
+    },
+    {
+      "id": "5.7",
+      "title": "Phase 5: Stale-Index Message in Doc Tools",
+      "description": "Every doc query (search_docs, doc_outline, doc_section, doc_links, doc_terms, api_surface) returns the shared stale message from 1.4 when the loaded index is stale (no meta or schema < 3), instead of empty or misleading results; nothing is written. Tests: each of the six against the v2 fixture returns the message and leaves the index bytes unchanged. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.4",
+        "5.2",
+        "5.3",
+        "5.4",
+        "5.5",
+        "5.6"
+      ]
+    },
+    {
+      "id": "5.8",
+      "title": "Phase 5: Token Budget Check",
+      "description": "Test (user story 2): doc_outline for each Markdown file in tests/fixtures/docs/ plus doc_terms('tests/fixtures/docs') together are under 2000 tokens, measured as characters / 4. If over, tighten formatting (not the fixture). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "5.3",
+        "5.6"
+      ]
+    },
+    {
+      "id": "6.1",
+      "title": "Phase 6: Register the Six MCP Tools",
+      "description": "In src/mcp/server.rs register doc_search, doc_outline, doc_section, doc_links, doc_terms and api_surface with the parameters and defaults in the spec (limit=10, max_chars=4000, limit=30, optional symbol/path_prefix/path), wired to the QueryEngine methods. Tests in tests/mcp_test.rs (Verification 4): each tool called over the MCP harness on the fixture returns the expected TOON; each tool's truncation marker appears with a small budget or a large fixture; the stale message appears against a v2 index. Existing seven tools' tests unchanged. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "5.7"
+      ]
+    },
+    {
+      "id": "6.2",
+      "title": "Phase 6: Rewrite All Thirteen Tool Descriptions",
+      "description": "Rewrite every MCP tool description (status, query, blast_radius, plan, search, fetch_symbol, init and the six new tools) to name the question it answers better than grep/text search, using the spec's examples for blast_radius, fetch_symbol and query; search states it is code-only and points to doc_search for documentation. Only description strings change: names, parameters and outputs stay identical (assert the parameter schemas of the existing seven are unchanged against a snapshot taken before the edit). Test (Verification 6): list tools, assert 13 tools, every description non-empty and containing its use-case phrase. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "6.1"
+      ]
+    },
+    {
+      "id": "6.3",
+      "title": "Phase 6: CLI Subcommands",
+      "description": "In src/cli add 'doc search <query> [--limit]', 'doc outline <path>', 'doc section <path> <anchor> [--max-chars]', 'doc links <path> [--symbol]', 'doc terms [path_prefix] [--limit]' and 'api [path]', sharing the QueryEngine methods and TOON output with MCP. Integration tests in tests/integration_test.rs: each subcommand on the fixture matches the MCP output for the same arguments; --help lists them. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "5.7"
+      ]
+    },
+    {
+      "id": "7.1",
+      "title": "Phase 7: Performance and Size Verification",
+      "description": "Repeat the 1.1 measurements with the 0.3.0 release build on this repository and /opt/wde (build into a scratch out dir, not /opt/wde's live index, so running 0.2.x servers are not involved). Record time, index size and the new doc counts in projects/active/doc-and-spec-indexing/reports/verification.md next to the baseline; indexing time growth must be at most 20 % for both (Verification 5). Also record the outline+terms size (chars / 4) on OST-Manager's docs/ (user story 2). If the limit fails, profile and fix before continuing.",
+      "status": "pending",
+      "dependencies": [
+        "1.1",
+        "6.1",
+        "6.3"
+      ]
+    },
+    {
+      "id": "7.2",
+      "title": "Phase 7: Quality Gate",
+      "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher and regression suites) all clean. Walk the Specification's In-Scope bullets, Technical Constraints and Verification Criteria one by one and map each to the task and test that covers it in reports/verification.md; any gap becomes a new task before release.",
+      "status": "pending",
+      "dependencies": [
+        "6.2",
+        "7.1"
+      ]
+    },
+    {
+      "id": "7.3",
+      "title": "Phase 7: Docs, Version and Release Prep",
+      "description": "README: document the six tools, CLI subcommands, linking rules, OpenAPI detection, terms, schema v3/stale behaviour, and an upgrade note: after installing 0.3.0 restart every running project-map-cli-rust mcp process before the first 0.3 build, since 0.2.x watchers would overwrite a v3 index with v2. CHANGELOG 0.3.0 entry with the same upgrade note. Bump Cargo.toml to 0.3.0; cargo publish --dry-run passes. Leave tagging, pushing and publishing to the user (prepare commands in the handover).",
+      "status": "pending",
+      "dependencies": [
+        "7.2"
+      ]
+    },
+    {
+      "id": "7.4",
+      "title": "Phase 7: Hand Off Post-Release Acceptance",
+      "description": "Non-gating: record for OST-Manager that 0.3.0 unblocks P5 and that P5's first task is the hand check of doc_terms and doc_outline on OST-Manager's docs/ as persona-extraction input, with findings returning as a 0.3.x follow-up. Put this in the release handover (and propose the line for OST-Manager's ROADMAP.md rather than editing another repo unasked).",
+      "status": "pending",
+      "dependencies": [
+        "7.3"
+      ]
+    }
+  ]
+}

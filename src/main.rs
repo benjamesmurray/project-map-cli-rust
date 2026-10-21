@@ -20,7 +20,13 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Build { root, out } | Commands::Refresh { root, out } => {
             println!("Building project map index with rotation...");
-            rebuild_and_publish(std::path::Path::new(&root), std::path::Path::new(&out))?;
+            // Print the readable message (e.g. NewerIndex says what to do), not Debug.
+            if let Err(e) =
+                rebuild_and_publish(std::path::Path::new(&root), std::path::Path::new(&out))
+            {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
             println!("Index saved and versioned in {}", out);
         }
         Commands::Find {

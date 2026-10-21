@@ -485,7 +485,7 @@ fn test_index_meta_population_and_persistence() {
     let engine = QueryEngine::load(out).expect("Failed to load index");
     let meta = engine.meta().expect("IndexMeta must be present");
 
-    assert_eq!(meta.schema_version, 2);
+    assert_eq!(meta.schema_version, 3);
     assert_eq!(meta.tool_version, env!("CARGO_PKG_VERSION"));
     assert!(
         !meta.built_at.is_empty(),

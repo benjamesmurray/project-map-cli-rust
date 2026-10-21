@@ -421,3 +421,51 @@ fn test_multi_process_watcher_stress_test() {
         "ARCHITECTURE.md must never be created in out_dir"
     );
 }
+
+/// Task 1.5 (Verification 3b): a watcher in front of a newer-schema index logs,
+/// skips the rebuild, leaves the index byte-identical and keeps its engine.
+#[tokio::test]
+async fn test_watcher_skips_rebuild_over_newer_index() {
+    use project_map_cli_rust::core::graph::SCHEMA_VERSION;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().to_path_buf();
+    let out_dir = root.join(".project-map");
+    std::fs::write(root.join("main.py"), "def local_symbol(): pass\n").unwrap();
+
+    let latest_dir = out_dir.join("latest");
+    std::fs::create_dir_all(&latest_dir).unwrap();
+    let mut json: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string("tests/fixtures/compatibility/v0_2_0_index.json").unwrap(),
+    )
+    .unwrap();
+    json["meta"]["schema_version"] = serde_json::json!(SCHEMA_VERSION + 1);
+    let latest = latest_dir.join(".project-map.json");
+    std::fs::write(&latest, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+    let before = std::fs::read(&latest).unwrap();
+
+    let engine = QueryEngine::load(&latest).unwrap();
+    let symbols_before = engine.get_symbol_count();
+    let shared_engine = Arc::new(RwLock::new(Some(engine)));
+
+    let watcher = ProjectWatcher::new(root.clone(), out_dir.clone(), Arc::clone(&shared_engine))
+        .with_lock_timeout(Duration::from_millis(500));
+    watcher.start_in_background().unwrap();
+
+    std::fs::write(root.join("new_mod.py"), "def new_mod_sym(): pass\n").unwrap();
+    sleep(Duration::from_millis(1500)).await;
+
+    assert_eq!(
+        std::fs::read(&latest).unwrap(),
+        before,
+        "newer index must be byte-identical"
+    );
+    assert!(
+        !out_dir.join("backups").exists(),
+        "no versioned build may be written"
+    );
+    let lock = shared_engine.read().unwrap();
+    let eng = lock.as_ref().expect("engine retained");
+    assert_eq!(eng.get_symbol_count(), symbols_before);
+    assert!(eng.find_symbols("new_mod_sym").is_empty());
+}

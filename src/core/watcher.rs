@@ -210,11 +210,22 @@ impl ProjectWatcher {
                         };
 
                         if should_rebuild {
+                            if let Err(e) = crate::core::orchestrator::ensure_index_not_newer(&out_dir_clone) {
+                                tracing::warn!("Watcher skipping rebuild: {}", e);
+                                return Ok(None);
+                            }
                             tracing::info!("Rebuilding index under IndexLock...");
                             let mut orch = Orchestrator::new();
                             orch.scaffold_if_empty(&root_clone, &out_dir_clone).map_err(|e| e.to_string())?;
                             orch.build_index(&root_clone, &out_dir_clone).map_err(|e| e.to_string())?;
-                            orch.save_index_versioned_unlocked(&out_dir_clone).map_err(|e| e.to_string())?;
+                            match orch.save_index_versioned_unlocked(&out_dir_clone) {
+                                Ok(()) => {}
+                                Err(e @ crate::error::AppError::NewerIndex { .. }) => {
+                                    tracing::warn!("Watcher skipping rebuild: {}", e);
+                                    return Ok(None);
+                                }
+                                Err(e) => return Err(e.to_string()),
+                            }
                         } else {
                             tracing::info!("Index already rebuilt by another process (coalesced). Reloading only.");
                         }

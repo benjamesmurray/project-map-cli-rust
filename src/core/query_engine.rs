@@ -80,6 +80,10 @@ impl QueryEngine {
         self.graph.meta.as_ref()
     }
 
+    pub fn is_stale(&self) -> bool {
+        self.graph.is_stale()
+    }
+
     pub fn find_symbols(&self, query: &str) -> Vec<NodeData> {
         let keywords: Vec<String> = query
             .to_lowercase()

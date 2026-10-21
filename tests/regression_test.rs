@@ -313,3 +313,232 @@ fn test_compatibility_degenerate_fixture_triggers_status_warning() {
         status_output
     );
 }
+
+/// Snapshot of every file under `dir`: relative path, bytes and mtime.
+fn snapshot_dir(dir: &Path) -> Vec<(String, Vec<u8>, std::time::SystemTime)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in fs::read_dir(&d).expect("read_dir") {
+            let p = entry.expect("entry").path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                let meta = fs::metadata(&p).expect("metadata");
+                out.push((
+                    p.strip_prefix(dir).unwrap().to_string_lossy().to_string(),
+                    fs::read(&p).expect("read"),
+                    meta.modified().expect("mtime"),
+                ));
+            }
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Task 1.4 (Verification 3a): a schema-2 index and a legacy index without meta
+/// load read-only, are reported stale by status, and are never rewritten by
+/// status, query or search (library calls and the CLI binary).
+#[test]
+fn test_stale_index_detected_and_never_rewritten() {
+    use project_map_cli_rust::core::graph::STALE_INDEX_MESSAGE;
+
+    for fixture in ["v0_2_0_index.json", "legacy_v0_1_18_index.json"] {
+        let temp = tempdir().expect("tempdir");
+        let out_dir = temp.path().join(".project-map");
+        let latest = out_dir.join("latest");
+        fs::create_dir_all(&latest).unwrap();
+        let index = latest.join(".project-map.json");
+        fs::copy(
+            Path::new("tests/fixtures/compatibility").join(fixture),
+            &index,
+        )
+        .unwrap();
+        let before = snapshot_dir(&out_dir);
+
+        let engine = QueryEngine::load(&index).expect("stale index must still load");
+        assert!(engine.is_stale(), "{fixture} must be reported stale");
+        assert!(
+            engine.get_file_count() > 0,
+            "{fixture}: code data still served"
+        );
+
+        let status = ToonFormatter::format_full_status(
+            Some(&engine),
+            None,
+            Some(&out_dir),
+            index.to_str(),
+            None,
+            &[],
+        );
+        assert!(
+            status.contains(STALE_INDEX_MESSAGE),
+            "{fixture}: status must show the stale line, got:\n{status}"
+        );
+
+        // Code tools keep working against the stale index.
+        let _ = engine.find_symbols("hello");
+        let _ = engine.find_entities_with_preview("hello", None);
+        for p in engine.get_all_file_paths() {
+            let _ = engine.get_file_outline(&p);
+        }
+
+        // The CLI binary run against the same out dir must not write either.
+        let exe = env!("CARGO_BIN_EXE_project-map-cli-rust");
+        let idx_arg = out_dir.to_str().unwrap();
+        for args in [
+            vec!["status", "-i", idx_arg],
+            vec!["find", "-q", "hello", "-i", idx_arg],
+            vec!["search", "hello", "-i", idx_arg],
+        ] {
+            let res = std::process::Command::new(exe)
+                .args(&args)
+                .current_dir(temp.path())
+                .output()
+                .expect("run cli");
+            if args[0] == "status" {
+                let stdout = String::from_utf8_lossy(&res.stdout);
+                assert!(
+                    stdout.contains(STALE_INDEX_MESSAGE),
+                    "{fixture}: CLI status must show the stale line, got:\n{stdout}"
+                );
+            }
+        }
+
+        assert_eq!(
+            snapshot_dir(&out_dir),
+            before,
+            "{fixture}: out dir must be byte- and mtime-identical (no rewrite, backup or temp file)"
+        );
+    }
+}
+
+/// A freshly built index is current, and status does not call it stale.
+#[test]
+fn test_fresh_index_is_not_stale() {
+    use project_map_cli_rust::core::graph::STALE_INDEX_MESSAGE;
+
+    let temp = tempdir().expect("tempdir");
+    let out = temp.path().join("index.json");
+    let mut orch = Orchestrator::new();
+    orch.build_index(Path::new("tests/fixtures/python"), temp.path())
+        .expect("build");
+    orch.save_index(&out).expect("save");
+
+    let engine = QueryEngine::load(&out).expect("load");
+    assert!(!engine.is_stale());
+    let status =
+        ToonFormatter::format_full_status(Some(&engine), None, None, out.to_str(), None, &[]);
+    assert!(!status.contains(STALE_INDEX_MESSAGE));
+}
+
+/// Writes the schema-2 compatibility fixture with its schema_version replaced,
+/// laid out as a real build does (`latest -> backups/<dir>`), and returns the index path.
+fn seed_index_with_schema(out_dir: &Path, schema_version: u32) -> std::path::PathBuf {
+    let backup = out_dir.join("backups").join("20261012_150000_000_1");
+    fs::create_dir_all(&backup).unwrap();
+    std::os::unix::fs::symlink(
+        Path::new("backups").join("20261012_150000_000_1"),
+        out_dir.join("latest"),
+    )
+    .unwrap();
+    let latest = backup;
+    let mut json: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("tests/fixtures/compatibility/v0_2_0_index.json").unwrap(),
+    )
+    .unwrap();
+    json["meta"]["schema_version"] = serde_json::json!(schema_version);
+    let index = latest.join(".project-map.json");
+    fs::write(&index, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+    index
+}
+
+fn snapshot_without_lock(dir: &Path) -> Vec<(String, Vec<u8>, std::time::SystemTime)> {
+    snapshot_dir(dir)
+        .into_iter()
+        .filter(|(p, _, _)| !p.ends_with(".lock"))
+        .collect()
+}
+
+/// Task 1.5 (Verification 3b): building into an out dir holding a newer-schema
+/// index fails with NewerIndex and leaves it untouched (library and CLI).
+#[test]
+fn test_forward_guard_refuses_to_overwrite_newer_index() {
+    use project_map_cli_rust::core::graph::SCHEMA_VERSION;
+    use project_map_cli_rust::core::orchestrator::rebuild_and_publish;
+
+    let temp = tempdir().expect("tempdir");
+    let root = temp.path().join("project");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("main.py"), "def guarded(): pass\n").unwrap();
+    let out_dir = root.join(".project-map");
+    seed_index_with_schema(&out_dir, SCHEMA_VERSION + 1);
+    let before = snapshot_without_lock(&out_dir);
+
+    // rebuild_and_publish (CLI build/refresh path)
+    match rebuild_and_publish(&root, &out_dir) {
+        Err(AppError::NewerIndex { found, supported }) => {
+            assert_eq!(found, SCHEMA_VERSION + 1);
+            assert_eq!(supported, SCHEMA_VERSION);
+        }
+        other => panic!("expected NewerIndex, got {:?}", other.map(|_| ())),
+    }
+
+    // build_index + save_index_versioned (library path)
+    let mut orch = Orchestrator::new();
+    orch.build_index(&root, &out_dir)
+        .expect("build itself does not write");
+    assert!(matches!(
+        orch.save_index_versioned(&out_dir),
+        Err(AppError::NewerIndex { .. })
+    ));
+
+    // CLI binary exits non-zero and says why
+    let res = std::process::Command::new(env!("CARGO_BIN_EXE_project-map-cli-rust"))
+        .args([
+            "build",
+            "-r",
+            root.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run cli");
+    assert!(
+        !res.status.success(),
+        "CLI build must fail on a newer index"
+    );
+    let stderr = String::from_utf8_lossy(&res.stderr);
+    assert!(
+        stderr.contains("newer than this build supports"),
+        "stderr: {stderr}"
+    );
+
+    assert_eq!(
+        snapshot_without_lock(&out_dir),
+        before,
+        "newer index and out dir must be untouched"
+    );
+}
+
+/// Older (v2) and current (v3) indexes are replaced normally.
+#[test]
+fn test_forward_guard_allows_older_and_current_index() {
+    use project_map_cli_rust::core::graph::SCHEMA_VERSION;
+    use project_map_cli_rust::core::orchestrator::rebuild_and_publish;
+
+    for schema in [2, SCHEMA_VERSION] {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("project");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("main.py"), "def replaced(): pass\n").unwrap();
+        let out_dir = root.join(".project-map");
+        seed_index_with_schema(&out_dir, schema);
+
+        let engine = rebuild_and_publish(&root, &out_dir)
+            .unwrap_or_else(|e| panic!("schema {schema} must be replaced: {e}"));
+        assert_eq!(engine.meta().unwrap().schema_version, SCHEMA_VERSION);
+        assert!(!engine.find_symbols("replaced").is_empty());
+    }
+}

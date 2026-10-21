@@ -1,0 +1,13 @@
+﻿# Billing API published under a non-standard file name.
+# Detection must skip the BOM and these comments.
+openapi: 3.1.0
+info:
+  title: Retention API
+  version: 0.1.0
+paths:
+  /retention:
+    patch:
+      operationId: setRetention
+      summary: Change the retention window
+    trace:
+      summary: Trace retention

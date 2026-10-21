@@ -1,0 +1,6 @@
+# Not an OpenAPI file: the openapi key is nested, not top-level.
+service:
+  name: audit
+  openapi: 3.0.0
+database:
+  url: postgres://localhost/audit
