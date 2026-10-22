@@ -2,6 +2,7 @@ pub mod doc_queries;
 pub mod docs;
 pub mod git;
 pub mod graph;
+pub mod import_resolve;
 pub mod json_out;
 pub mod lock;
 pub mod orchestrator;

@@ -5,14 +5,14 @@
       "id": "1.1",
       "title": "Phase 1: Prerequisites and Close the Previous Feature",
       "description": "Mark machine-interface-for-ost task 6.4 complete (0.4.0 is tagged, published and installed) and archive that feature through the spec CLI; fix any links into its reports that the move breaks (README, CHANGELOG, this Specification). Confirm projects/active/ holds only deterministic-import-resolution. Record the prerequisite results in .epoch-context.md. Done when sc_status shows the old feature archived.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": []
     },
     {
       "id": "1.2",
       "title": "Phase 1: 0.4.0 Variance Baseline",
       "description": "With the installed 0.4.0 release binary, on copies of this repository, /home/benmurray/Projects/OST-Manager (at its current HEAD) and /opt/wde, build 5 times each and record per build: edge count, Imports edge count, resolved and unresolved import counts (from the imports side table), and blast_radius totals for a fixed list of five symbols per repository (for OST-Manager include src/ost_manager/config.py::Settings). Also time a full build (median of 3, release build). Save the commands (a script under projects/active/deterministic-import-resolution/reports/ is fine) and the table with each repository's spread to projects/active/deterministic-import-resolution/reports/baseline.md. Done when the report shows the 0.4.0 variation on at least OST-Manager.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "1.1"
       ]
@@ -21,7 +21,7 @@
       "id": "1.3",
       "title": "Phase 1: ambiguous_imports Fixture",
       "description": "Create tests/fixtures/ambiguous_imports/ with a README listing which file exercises which rule: Python packages under src/ (src/app/config.py, src/app/service.py importing app.config) and a second root (tests/fixtures_copy/app/config.py or similar) so app.config has a tier-1 candidate with fewer leading segments that must win; an exact tie (two candidates with equal tier and equal leading-segment count) that must stay unlinked; module myredis.py plus an import of redis that must not link to it; a tier-2 case (import pkg.mod.Thing, file pkg/mod.py); a tier-3 case. Write down the expected edge list in the README. Existing tests still pass.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.1"
       ]
@@ -30,7 +30,7 @@
       "id": "1.4",
       "title": "Phase 1: resolve_by_suffix",
       "description": "Create src/core/import_resolve.rs (registered in core/mod.rs) with SuffixResolution { Unique, Ambiguous, None } and resolve_by_suffix(import, fqns: &BTreeSet<String>) implementing the Specification's tiers on whole dot segments, the fewer-leading-segments rule within a tier, and Ambiguous with sorted candidates on a remaining tie. Unit tests in the module: each tier, tier precedence, the leading-segment rule, exact tie, redis vs myredis, empty import, single-segment import, an FQN equal to the import (handled by Strategy 1 but must still return Unique here). Not wired into the orchestrator yet. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.1"
       ]
