@@ -4,11 +4,13 @@
 //! results qualify them (`Outer.inner`).
 
 use crate::core::doc_queries::DocLinksView;
-use crate::core::graph::NodeData;
-use crate::core::query_engine::{QueryEngine, SnippetExtractor};
+use crate::core::git::{read_git_state, GitBudget};
+use crate::core::graph::{ImportEntry, NodeData, NodeType};
+use crate::core::parser::{is_code_extension, language_of_path};
+use crate::core::query_engine::{BlastWalk, QueryEngine, SnippetExtractor};
 use crate::core::results::*;
 use crate::core::utils::{normalize_rel_path, PathTree};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// Reads each file once to turn byte ranges into last lines.
@@ -35,6 +37,18 @@ impl<'a> EndLines<'a> {
             end_line_of(text, node.line, node.start_byte, node.end_byte)
         })
     }
+}
+
+/// The index's Git fields beside the Git state read at query time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitView {
+    pub commit: Option<String>,
+    pub dirty: Option<bool>,
+    pub branch: Option<String>,
+    pub head_now: Option<String>,
+    pub dirty_now: Option<bool>,
+    pub at_head: Option<bool>,
+    pub error: Option<String>,
 }
 
 fn limited<T>(mut all: Vec<T>, limit: Option<usize>) -> (usize, bool, Vec<T>) {
@@ -159,8 +173,8 @@ impl QueryEngine {
         })
     }
 
-    /// `blast_radius`. The walk is the 0.3.0 one until the breadth-first walk
-    /// replaces it, so depth and the direct / transitive counts are not set yet.
+    /// `blast_radius`: the dependents of a symbol (or of its file), each at its
+    /// shortest depth, with counts over all of them. `limit` caps only the listed items.
     pub fn blast_result(
         &self,
         path: &str,
@@ -168,23 +182,70 @@ impl QueryEngine {
         limit: Option<usize>,
     ) -> BlastRadiusResult {
         let norm = normalize_rel_path(Path::new("."), path);
-        let target = self.blast_target(&norm, symbol);
+        let walk = self.blast_walk(&norm, symbol);
+        self.blast_from_walk(norm, &walk, limit)
+    }
+
+    /// The unlimited result and the dependent nodes (as stored, with bare names) of
+    /// one walk, for the TOON formatter.
+    pub fn blast_with_nodes(&self, path: &str, symbol: &str) -> (BlastRadiusResult, Vec<NodeData>) {
+        let norm = normalize_rel_path(Path::new("."), path);
+        let walk = self.blast_walk(&norm, symbol);
+        let nodes = walk
+            .dependents
+            .iter()
+            .map(|(_, idx)| self.graph.graph[*idx].clone())
+            .collect();
+        (self.blast_from_walk(norm, &walk, None), nodes)
+    }
+
+    fn blast_from_walk(
+        &self,
+        norm: String,
+        walk: &BlastWalk,
+        limit: Option<usize>,
+    ) -> BlastRadiusResult {
         let namer = self.namer();
         let mut ends = EndLines::new(self);
-        let (total, truncated, nodes) = limited(self.check_blast_radius(&norm, symbol), limit);
-        let items = nodes
+
+        let target_file = walk
+            .target
+            .map(|(idx, _)| self.graph.graph[idx].path.clone());
+        let direct = walk.dependents.iter().filter(|(d, _)| *d == 1).count();
+        let total = walk.dependents.len();
+        let mut files: Vec<&str> = walk
+            .dependents
             .iter()
-            .map(|n| BlastItem {
-                symbol: namer.qualify(n),
-                kind: n.kind.clone(),
-                node_type: n.node_type.clone(),
-                path: n.path.clone(),
-                line: n.line,
-                end_line: Some(ends.of(n)),
-                depth: None,
+            .map(|(_, idx)| self.graph.graph[*idx].path.as_str())
+            .filter(|p| Some(*p) != target_file.as_deref())
+            .collect();
+        files.sort_unstable();
+        files.dedup();
+        let mut languages: Vec<String> = files
+            .iter()
+            .filter_map(|p| language_of_path(p))
+            .map(str::to_string)
+            .collect();
+        languages.sort();
+        languages.dedup();
+
+        let (_, truncated, listed) = limited(walk.dependents.clone(), limit);
+        let items = listed
+            .iter()
+            .map(|&(depth, idx)| {
+                let n = &self.graph.graph[idx];
+                BlastItem {
+                    symbol: namer.qualify(n),
+                    kind: n.kind.clone(),
+                    node_type: n.node_type.clone(),
+                    path: n.path.clone(),
+                    line: n.line,
+                    end_line: Some(ends.of(n)),
+                    depth,
+                }
             })
             .collect();
-        let (matched, target_symbol, target_line) = match target {
+        let (matched, target_symbol, target_line) = match walk.target {
             Some((idx, BlastMatch::Symbol)) => {
                 let node = &self.graph.graph[idx];
                 (
@@ -201,17 +262,17 @@ impl QueryEngine {
             target_symbol,
             target_line,
             matched,
-            direct: None,
-            transitive: None,
+            direct,
+            transitive: total - direct,
             total,
-            files_affected: None,
-            languages: Vec::new(),
+            files_affected: files.len(),
+            languages,
             truncated,
             items,
         }
     }
 
-    /// `plan`. As for `blast_result`, depth is not set yet.
+    /// `plan`: what the target depends on, each node at its distance in edges.
     pub fn plan_result(&self, symbol: &str, limit: Option<usize>) -> PlanResult {
         let namer = self.namer();
         let (target_symbol, target_path, target_line) = match self.plan_target(symbol) {
@@ -225,16 +286,19 @@ impl QueryEngine {
             }
             None => (None, None, None),
         };
-        let (total, truncated, nodes) = limited(self.analyze_impact(symbol), limit);
-        let items = nodes
+        let (total, truncated, reached) = limited(self.plan_walk(symbol), limit);
+        let items = reached
             .iter()
-            .map(|n| PlanItem {
-                symbol: namer.qualify(n),
-                kind: n.kind.clone(),
-                node_type: n.node_type.clone(),
-                path: n.path.clone(),
-                line: n.line,
-                depth: None,
+            .map(|&(depth, idx)| {
+                let n = &self.graph.graph[idx];
+                PlanItem {
+                    symbol: namer.qualify(n),
+                    kind: n.kind.clone(),
+                    node_type: n.node_type.clone(),
+                    path: n.path.clone(),
+                    line: n.line,
+                    depth,
+                }
             })
             .collect();
         PlanResult {
@@ -248,22 +312,50 @@ impl QueryEngine {
         }
     }
 
-    /// `status` as data. The Git fields stay `None` until the index records them.
+    /// The Git state of the root now, read once within the query budget, set against
+    /// what the index recorded.
+    pub fn git_view(&self) -> GitView {
+        let meta = self.meta().cloned().unwrap_or_default();
+        let now = read_git_state(Path::new(&meta.root), GitBudget::QUERY);
+        let at_head = match (&meta.git_commit, &now.commit) {
+            (Some(built), Some(head)) if built != head => Some(false),
+            (Some(_), Some(_)) => match (meta.git_dirty, now.dirty) {
+                (Some(false), Some(false)) => Some(true),
+                (Some(true), _) | (_, Some(true)) => Some(false),
+                _ => None,
+            },
+            _ => None,
+        };
+        GitView {
+            commit: meta.git_commit,
+            dirty: meta.git_dirty,
+            branch: meta.git_branch,
+            head_now: now.commit,
+            dirty_now: now.dirty,
+            at_head,
+            error: now.error,
+        }
+    }
+
+    /// `status` as data: the module tree to `max_depth` levels, and the Git state of
+    /// the index against the tree now.
     pub fn status_result(&self, max_depth: usize, active_features: Vec<String>) -> StatusResult {
         let meta = self.meta().cloned().unwrap_or_default();
-        let (tree, _) = PathTree::from_paths(&self.get_all_file_paths()).to_result(".", max_depth);
+        let (tree, truncated) =
+            PathTree::from_paths(&self.get_all_file_paths()).to_result(".", max_depth);
+        let git = self.git_view();
         StatusResult {
             tool_version: meta.tool_version,
             schema_version: meta.schema_version,
             root: meta.root,
             built_at: meta.built_at,
-            commit: None,
-            dirty: None,
-            branch: None,
-            head_now: None,
-            dirty_now: None,
-            at_head: None,
-            git_error: None,
+            commit: git.commit,
+            dirty: git.dirty,
+            branch: git.branch,
+            head_now: git.head_now,
+            dirty_now: git.dirty_now,
+            at_head: git.at_head,
+            git_error: git.error,
             stale: self.is_stale(),
             files: meta.file_count,
             symbols: meta.symbol_count,
@@ -274,7 +366,186 @@ impl QueryEngine {
             api_operations: meta.api_operation_count,
             tree,
             active_features,
+            truncated,
+            missing: false,
+            next_step: None,
         }
+    }
+
+    /// `modules`: recursive counts per directory, for `path_prefix` and the
+    /// directories up to `max_depth` levels below it, sorted by path. Root files
+    /// count under `.`. A prefix that is not an indexed directory is `not_found`.
+    pub fn modules_result(
+        &self,
+        path_prefix: Option<&str>,
+        max_depth: usize,
+    ) -> Result<ModulesResult, QueryError> {
+        let prefix = path_prefix
+            .map(|p| normalize_rel_path(Path::new("."), p))
+            .map(|p| p.trim_end_matches('/').to_string())
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| ".".to_string());
+
+        // Counts per file path, then folded into every directory above the file.
+        let mut per_file: BTreeMap<String, ModuleItem> = BTreeMap::new();
+        for node in self.graph.graph.node_weights() {
+            let path = node.path.trim_start_matches("./");
+            let counts = per_file
+                .entry(path.to_string())
+                .or_insert_with(|| ModuleItem {
+                    path: path.to_string(),
+                    depth: 0,
+                    files: 0,
+                    code_files: 0,
+                    symbols: 0,
+                    doc_files: 0,
+                    doc_sections: 0,
+                });
+            match node.node_type {
+                NodeType::File => {
+                    counts.files = 1;
+                    match Path::new(path).extension().and_then(|e| e.to_str()) {
+                        Some("md") => counts.doc_files = 1,
+                        Some(ext) if is_code_extension(ext) => counts.code_files = 1,
+                        _ => {}
+                    }
+                }
+                NodeType::DocSection => {
+                    counts.doc_sections += 1;
+                    counts.doc_files = 1;
+                }
+                // OpenAPI files are API surface, not documents: `doc_files` counts Markdown.
+                NodeType::ApiOperation | NodeType::ApiSchema => {}
+                _ => counts.symbols += 1,
+            }
+        }
+
+        let base = if prefix == "." {
+            0
+        } else {
+            prefix.split('/').count()
+        };
+        let mut dirs: BTreeMap<String, ModuleItem> = BTreeMap::new();
+        for (path, c) in &per_file {
+            let parts: Vec<&str> = path.split('/').collect();
+            let mut dir = String::new();
+            for level in 0..parts.len() {
+                // Level 0 is the root `.`; level n is the first n components.
+                if level > 0 {
+                    if !dir.is_empty() {
+                        dir.push('/');
+                    }
+                    dir.push_str(parts[level - 1]);
+                }
+                let name = if level == 0 { "." } else { dir.as_str() };
+                let in_prefix =
+                    prefix == "." || name == prefix || name.starts_with(&format!("{prefix}/"));
+                if !in_prefix {
+                    continue;
+                }
+                let item = dirs.entry(name.to_string()).or_insert_with(|| ModuleItem {
+                    path: name.to_string(),
+                    depth: level - base,
+                    files: 0,
+                    code_files: 0,
+                    symbols: 0,
+                    doc_files: 0,
+                    doc_sections: 0,
+                });
+                item.files += c.files;
+                item.code_files += c.code_files;
+                item.symbols += c.symbols;
+                item.doc_files += c.doc_files;
+                item.doc_sections += c.doc_sections;
+            }
+        }
+        if prefix != "." && !dirs.contains_key(&prefix) {
+            return Err(QueryError::not_found(format!(
+                "Directory not indexed: {prefix}"
+            )));
+        }
+        let items: Vec<ModuleItem> = dirs
+            .into_values()
+            .filter(|m| m.depth <= max_depth)
+            .collect();
+        Ok(ModulesResult {
+            path_prefix: prefix,
+            max_depth,
+            total: items.len(),
+            items,
+        })
+    }
+
+    /// `imports`: the import statements of an external package, with `path_prefix`
+    /// narrowing the files. `package` matches a package name exactly, or by prefix
+    /// when it ends in `/*` or `.*` (`@sentry/*`). Ordered by path, line, module.
+    /// `files` and `imports` count every match; `limit` (default 50) caps the list.
+    pub fn imports_result(
+        &self,
+        package: &str,
+        path_prefix: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<ImportsResult, QueryError> {
+        let query = package.trim();
+        if query.is_empty() || query == "/*" || query == ".*" {
+            return Err(QueryError::invalid_argument(
+                "Error: Provide a package name, e.g. stripe or @sentry/*",
+            ));
+        }
+        if self.is_stale() {
+            return Err(QueryError::index_stale());
+        }
+        let prefix_match = query.ends_with("/*") || query.ends_with(".*");
+        let wanted = if prefix_match {
+            &query[..query.len() - 1]
+        } else {
+            query
+        };
+        let dir = path_prefix
+            .map(|p| normalize_rel_path(Path::new("."), p))
+            .map(|p| p.trim_end_matches('/').to_string())
+            .filter(|p| !p.is_empty() && p != ".");
+        let in_dir = |path: &str| match &dir {
+            None => true,
+            Some(d) => path == d || path.starts_with(&format!("{d}/")),
+        };
+
+        let mut matches: Vec<&ImportEntry> = self
+            .graph
+            .imports
+            .iter()
+            .filter(|e| {
+                e.package.as_deref().is_some_and(|p| {
+                    if prefix_match {
+                        p.starts_with(wanted)
+                    } else {
+                        p == wanted
+                    }
+                }) && in_dir(&e.path)
+            })
+            .collect();
+        matches.sort_by(|a, b| (&a.path, a.line, &a.module).cmp(&(&b.path, b.line, &b.module)));
+        let mut files: Vec<&str> = matches.iter().map(|e| e.path.as_str()).collect();
+        files.dedup();
+        let (total, truncated, listed) = limited(matches, Some(limit.unwrap_or(50)));
+        Ok(ImportsResult {
+            query: query.to_string(),
+            files: files.len(),
+            imports: total,
+            truncated,
+            items: listed
+                .into_iter()
+                .map(|e| ImportItem {
+                    path: e.path.clone(),
+                    line: e.line,
+                    text: e.text.clone(),
+                    module: e.module.clone(),
+                    package: e.package.clone(),
+                    language: e.language.clone(),
+                    resolved: e.resolved,
+                })
+                .collect(),
+        })
     }
 
     // --- Documentation tools ---
@@ -307,14 +578,23 @@ impl QueryEngine {
         })
     }
 
-    pub fn doc_outline_result(&self, path: &str) -> Result<DocOutlineResult, QueryError> {
+    /// The heading tree, cut to `max_depth` when given (h1 = 1, by nesting).
+    pub fn doc_outline_result(
+        &self,
+        path: &str,
+        max_depth: Option<usize>,
+    ) -> Result<DocOutlineResult, QueryError> {
         let view = self
             .doc_outline(path)
             .map_err(QueryError::from_doc_message)?;
+        let (view, truncated) = match max_depth {
+            Some(depth) => view.cut_to_depth(depth),
+            None => (view, false),
+        };
         Ok(DocOutlineResult {
             path: view.path,
             frontmatter: view.meta,
-            truncated: false,
+            truncated,
             items: view
                 .entries
                 .into_iter()

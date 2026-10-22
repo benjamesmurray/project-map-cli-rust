@@ -110,7 +110,7 @@
       "id": "3.1",
       "title": "Phase 3: Status Result With Git and Depth",
       "description": "status_result(max_depth) returns the StatusResult: build fields, Git fields from IndexMeta, head_now and dirty_now from read_git_state at query time (one 1.5 s budget for all calls), git_error when Git failed, at_head (indexed commit == head_now and neither dirty), stale, counts, the module tree as nested {name, children} to max_depth (default 3) with truncated set when deeper paths exist, active features. Missing index gives a StatusResult with index missing (not an error) and the refresh/init instruction. TOON shows the commit line (short SHA, dirty marker, at_head) and keeps everything else as before. Tests: user-story Git cases (clean, edit after build, new commit without rebuild, no repo), max_depth 1, missing index. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.6"
       ]
@@ -119,7 +119,7 @@
       "id": "3.2",
       "title": "Phase 3: doc_outline max_depth",
       "description": "doc_outline_result(path, max_depth?) keeps sections whose tree depth (h1 = 1, by nesting not heading level) is <= max_depth and sets truncated when any were dropped; the item carries depth. Tests on the docs fixture: depth 1 and 2, a skipped level (h1 then h3 counts as depth 2), no max_depth equals 0.3.0 output. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.6"
       ]
@@ -128,7 +128,7 @@
       "id": "3.3",
       "title": "Phase 3: modules Query",
       "description": "modules_result(path_prefix?, max_depth=2): for each directory under the prefix down to max_depth levels, recursive counts of files, code_files, symbols (code symbols only), doc_files and doc_sections; root files counted under '.'; sorted by path; invalid prefix gives not_found. Tests: counts on the fixture trees, children sum to parent minus the parent's own files, max_depth 0/1/2, prefix filter. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.6"
       ]
@@ -137,7 +137,7 @@
       "id": "3.4",
       "title": "Phase 3: Breadth-First Blast Radius With Counts",
       "description": "check_blast_radius becomes a 0-1 breadth-first walk over incoming edges: following Contains upward (to the enclosing symbol and the file) costs depth 0 and those structural ancestors are never listed or counted; every other edge (Imports, Produces/Consumes, Configures) costs 1, so an importer of the target's file and an importer of the symbol are both depth 1. Each result carries its shortest depth. Summary: direct, transitive, total, files_affected (distinct dependent paths excluding the target's file), languages (sorted), matched (symbol, or file for the 0.3.0 fallback when the symbol is not in the path; neither gives not_found), target_path/target_symbol/target_line. Doc nodes stay excluded. plan (analyze_impact) also reports depth and its target. TOON: extend the existing Summary: block with direct and transitive counts and make Unique Files Affected use the files_affected definition; per-node lines keep their format; the target's own file is no longer listed. The tool description and README say direct counts dependents, not callers (there are no call edges). Tests: the 1.2 diamond (node at depths 1 and 3 reported once at 1); summary counts; Contains ancestors absent; importer of the target's file at depth 1; matched: file fallback; Rust fixture crate importers via use crate:: listed; cross-language languages list; doc nodes absent. List every updated 0.3.0 test in the phase report. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.6"
       ]
@@ -146,7 +146,7 @@
       "id": "3.5",
       "title": "Phase 3: imports Query",
       "description": "imports_result(package, path_prefix?, limit=50): exact package match, or prefix match when the query ends in '/*' or '.*'; results sorted by path then line with truncated and total; summary files and imports counts over every match, not only the limit listed; ties on one line ordered by module; schema-3 index gives index_stale; empty package gives invalid_argument. Tests: imports('@sentry/*'), imports('stripe'), imports('sentry_sdk'), imports('serde_json') across JS, TS, Python and Rust fixtures; relative and crate:: imports never match; limit and truncation. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.6"
       ]
@@ -155,7 +155,7 @@
       "id": "3.6",
       "title": "Phase 3: Total Ordering for Every List",
       "description": "Apply the Specification's orders in the query layer: search and query by path, line, name; blast_radius and plan by depth, path, line, name; modules by path; imports by path, line; doc tools' existing orders completed with path then byte offset. Determinism test: copy the docs and imports fixtures into two differently named tempdirs, build each twice, and assert every tool's TOON and JSON output (once 4.1 lands, JSON; until then TOON) is byte-identical except status build fields. Update only tests that pinned an old tie order, listing them in the phase report. cargo test passes. Also make target selection deterministic: when several nodes match the requested name (plan across the repository, blast_radius and fetch_symbol within a path) use the first by path then line, and report it. search ordering by path reorders whole lists, not only ties: record the before/after of the 1.1 call set in the phase report. Determinism test includes ambiguous target names.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "3.4",
         "3.5"
@@ -165,7 +165,7 @@
       "id": "3.7",
       "title": "Phase 3 Gate",
       "description": "Phase 3 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase3_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 4.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "3.1",
         "3.2",

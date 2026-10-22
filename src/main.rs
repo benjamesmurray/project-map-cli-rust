@@ -123,10 +123,10 @@ async fn main() -> Result<()> {
         } => {
             let engine = QueryEngine::load(&get_index_path(&index))?;
             let norm_path = normalize_rel_path(std::path::Path::new("."), &path);
-            let results = engine.check_blast_radius(&norm_path, &symbol);
+            let (radius, results) = engine.blast_with_nodes(&norm_path, &symbol);
             println!(
                 "{}",
-                ToonFormatter::format_blast_radius(&norm_path, &symbol, &results)
+                ToonFormatter::format_blast_radius(&norm_path, &symbol, &results, &radius)
             );
         }
         Commands::Search {

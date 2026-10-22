@@ -1015,6 +1015,56 @@ const MAX_JS_BYTES: u64 = 256 * 1024;
 const MAX_JS_LINE_CHARS: usize = 1000;
 const JS_SNIFF_BYTES: usize = 32 * 1024;
 
+/// The language name the parser gives a file (`FileOutline.language`), from its path.
+/// JavaScript is `typescript`, as for symbols and imports.
+pub fn language_of_path(path: &str) -> Option<&'static str> {
+    let path = Path::new(path);
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    if name.starts_with(".env") || extension == "env" {
+        return Some("env");
+    }
+    Some(match extension {
+        "py" => "python",
+        "rs" => "rust",
+        "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" => "typescript",
+        "kt" => "kotlin",
+        "lua" => "lua",
+        "php" => "php",
+        "tf" => "hcl",
+        "gd" => "gdscript",
+        "vue" => "vue",
+        "sql" => "sql",
+        "yaml" | "yml" => "yaml",
+        "md" => "markdown",
+        "json" => "json",
+        "toml" => "toml",
+        _ => return None,
+    })
+}
+
+/// True for an extension the parser reads as a programming language (not Markdown,
+/// JSON, TOML, YAML or `.env`, which carry docs and configuration).
+pub fn is_code_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "py" | "rs"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "kt"
+            | "lua"
+            | "php"
+            | "tf"
+            | "gd"
+            | "vue"
+            | "sql"
+    )
+}
+
 pub fn is_javascript_extension(extension: &str) -> bool {
     matches!(extension, "js" | "jsx" | "mjs" | "cjs")
 }

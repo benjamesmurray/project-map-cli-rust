@@ -1,12 +1,12 @@
 use crate::core::graph::{
-    EntityMatch, IndexMeta, NodeData, NodeType, ProjectGraph, SnippetPreview,
+    EdgeType, EntityMatch, IndexMeta, NodeData, NodeType, ProjectGraph, SnippetPreview,
 };
 use crate::core::results::BlastMatch;
 use crate::core::utils::normalize_rel_path;
 use crate::error::Result;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::Dfs;
-use std::collections::HashMap;
+use petgraph::visit::EdgeRef;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -42,6 +42,13 @@ impl RetryPolicy {
             delays: Vec::new(),
         }
     }
+}
+
+/// A blast radius walk: the node it started from and its dependents.
+pub(crate) struct BlastWalk {
+    pub target: Option<(NodeIndex, BlastMatch)>,
+    /// (depth, node); depth is 1 for a direct dependent. Ordered by depth, path, line, name.
+    pub dependents: Vec<(usize, NodeIndex)>,
 }
 
 #[derive(Debug)]
@@ -101,7 +108,8 @@ impl QueryEngine {
             return Vec::new();
         }
 
-        self.graph
+        let mut found: Vec<NodeData> = self
+            .graph
             .graph
             .node_weights()
             .filter(|n| {
@@ -123,36 +131,44 @@ impl QueryEngine {
                     .all(|k| name_lower.contains(k) || doc_lower.contains(k))
             })
             .cloned()
-            .collect()
+            .collect();
+        found.sort_by(symbol_order);
+        found
     }
 
     pub fn get_file_outline(&self, path: &str) -> Vec<NodeData> {
         let norm_path = normalize_rel_path(Path::new("."), path);
         if norm_path == "." {
-            return self
-                .graph
-                .graph
-                .node_weights()
-                .filter(|n| n.node_type == NodeType::File)
-                .cloned()
-                .collect();
+            return self.find_files("");
         }
 
         if let Some(idx) = self.outline_file_node(&norm_path) {
-            use petgraph::visit::EdgeRef;
-            self.graph
+            let mut outline: Vec<NodeData> = self
+                .graph
                 .graph
                 .edges_directed(idx, petgraph::Direction::Outgoing)
                 // Doc -> code references belong to `doc_links`, not to an outline.
-                .filter(|edge| *edge.weight() != crate::core::graph::EdgeType::References)
+                .filter(|edge| *edge.weight() != EdgeType::References)
                 .map(|edge| {
                     let mut node = self.graph.graph[edge.target()].clone();
-                    if *edge.weight() == crate::core::graph::EdgeType::Imports {
+                    if *edge.weight() == EdgeType::Imports {
                         node.role = Some("Import".to_string());
                     }
                     node
                 })
-                .collect()
+                .collect();
+            // Imports first (by the imported path, line, name), then the file's own
+            // symbols in source order.
+            outline.sort_by(|a, b| {
+                let (a_import, b_import) = (
+                    a.role.as_deref() == Some("Import"),
+                    b.role.as_deref() == Some("Import"),
+                );
+                b_import
+                    .cmp(&a_import)
+                    .then_with(|| symbol_order_path_first(a, b, a_import))
+            });
+            outline
         } else {
             Vec::new()
         }
@@ -167,28 +183,65 @@ impl QueryEngine {
         })
     }
 
-    /// The node `plan` starts from: the first non-doc node with this name.
+    /// The node `plan` starts from: of the non-doc nodes with this name, the first by
+    /// path, then line.
     pub(crate) fn plan_target(&self, name: &str) -> Option<NodeIndex> {
-        self.graph
-            .graph
-            .node_indices()
-            .find(|i| self.graph.graph[*i].name == name && !self.graph.graph[*i].node_type.is_doc())
+        self.first_by_position(self.graph.graph.node_indices().filter(|i| {
+            self.graph.graph[*i].name == name && !self.graph.graph[*i].node_type.is_doc()
+        }))
+    }
+
+    /// The first of `candidates` by path, then line, then byte offset, then index.
+    fn first_by_position(&self, candidates: impl Iterator<Item = NodeIndex>) -> Option<NodeIndex> {
+        candidates.min_by(|a, b| {
+            let (x, y) = (&self.graph.graph[*a], &self.graph.graph[*b]);
+            (&x.path, x.line, x.start_byte, a).cmp(&(&y.path, y.line, y.start_byte, b))
+        })
+    }
+
+    /// What the target of `plan` depends on (outgoing edges), each node at its
+    /// shortest distance in edges, ordered by depth, path, line and name.
+    pub(crate) fn plan_walk(&self, name: &str) -> Vec<(usize, NodeIndex)> {
+        let Some(start) = self.plan_target(name) else {
+            return Vec::new();
+        };
+        let mut dist: HashMap<NodeIndex, usize> = HashMap::from([(start, 0)]);
+        let mut queue = VecDeque::from([start]);
+        while let Some(current) = queue.pop_front() {
+            let next = dist[&current] + 1;
+            for neighbor in self
+                .graph
+                .graph
+                .neighbors_directed(current, petgraph::Direction::Outgoing)
+            {
+                if let std::collections::hash_map::Entry::Vacant(slot) = dist.entry(neighbor) {
+                    slot.insert(next);
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+        let mut reached: Vec<(usize, NodeIndex)> = dist
+            .into_iter()
+            .filter(|&(idx, _)| idx != start)
+            .map(|(idx, depth)| (depth, idx))
+            .collect();
+        reached.sort_by(|a, b| {
+            let (x, y) = (&self.graph.graph[a.1], &self.graph.graph[b.1]);
+            a.0.cmp(&b.0)
+                .then_with(|| x.path.cmp(&y.path))
+                .then_with(|| x.line.cmp(&y.line))
+                .then_with(|| x.name.cmp(&y.name))
+                .then_with(|| x.kind.cmp(&y.kind))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        reached
     }
 
     pub fn analyze_impact(&self, name: &str) -> Vec<NodeData> {
-        if let Some(start_node) = self.plan_target(name) {
-            // Impact: who do I depend on? (Outgoing edges)
-            let mut dfs = Dfs::new(&self.graph.graph, start_node);
-            let mut results = Vec::new();
-            while let Some(nx) = dfs.next(&self.graph.graph) {
-                if nx != start_node {
-                    results.push(self.graph.graph[nx].clone());
-                }
-            }
-            results
-        } else {
-            Vec::new()
-        }
+        self.plan_walk(name)
+            .into_iter()
+            .map(|(_, idx)| self.graph.graph[idx].clone())
+            .collect()
     }
 
     /// The node a blast radius starts from: the symbol in the file, else (when the
@@ -201,13 +254,13 @@ impl QueryEngine {
         let in_file = |node: &NodeData| {
             node.path == norm_path || normalize_rel_path(Path::new("."), &node.path) == norm_path
         };
-        let symbol_idx = self.graph.graph.node_indices().find(|i| {
+        let symbol_idx = self.first_by_position(self.graph.graph.node_indices().filter(|i| {
             let node = &self.graph.graph[*i];
             in_file(node)
                 && node.name == symbol
                 && node.node_type != NodeType::File
                 && !node.node_type.is_doc()
-        });
+        }));
         if let Some(idx) = symbol_idx {
             return Some((idx, BlastMatch::Symbol));
         }
@@ -222,67 +275,113 @@ impl QueryEngine {
             .map(|idx| (idx, BlastMatch::File))
     }
 
-    pub fn check_blast_radius(&self, path: &str, symbol: &str) -> Vec<NodeData> {
-        let norm_path = normalize_rel_path(Path::new("."), path);
-        let Some((start_node, _)) = self.blast_target(&norm_path, symbol) else {
-            return Vec::new();
+    /// Who depends on the target, each at its shortest depth. See `BlastWalk`.
+    pub(crate) fn blast_walk(&self, norm_path: &str, symbol: &str) -> BlastWalk {
+        let Some((start, matched)) = self.blast_target(norm_path, symbol) else {
+            return BlastWalk {
+                target: None,
+                dependents: Vec::new(),
+            };
         };
 
-        // Blast Radius: who depends on me? (Incoming edges)
-        // We need to use a graph traversal that follows edges backwards.
-        // petgraph's Dfs follows outgoing edges. To follow incoming, we can use a custom traversal or reverse the graph.
-        // Alternatively, we can use neighbors_directed with Incoming in a loop.
-
-        let mut results = Vec::new();
-        let mut stack = vec![start_node];
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(start_node);
-
-        while let Some(current) = stack.pop() {
-            for neighbor in self
+        // A 0-1 breadth-first walk over incoming edges. Following containment upward (to
+        // the enclosing symbol and the file) costs 0, so the target's structural
+        // ancestors stay at distance 0 and are not dependents. Every other edge costs 1.
+        let mut dist: HashMap<NodeIndex, usize> = HashMap::new();
+        dist.insert(start, 0);
+        let mut queue = VecDeque::from([(start, 0usize)]);
+        while let Some((current, d)) = queue.pop_front() {
+            if dist.get(&current).is_some_and(|&best| best < d) {
+                continue;
+            }
+            for edge in self
                 .graph
                 .graph
-                .neighbors_directed(current, petgraph::Direction::Incoming)
+                .edges_directed(current, petgraph::Direction::Incoming)
             {
+                let neighbor = edge.source();
                 // Documentation that mentions a symbol is not a code dependent; `doc_links` lists it.
                 if self.is_doc_node(neighbor) {
                     continue;
                 }
-                if visited.insert(neighbor) {
-                    results.push(self.graph.graph[neighbor].clone());
-                    stack.push(neighbor);
+                // A file holds its symbols through `Contains`, and its topics, tables and
+                // environment variables through the role edges (`Produces`, `Consumes`,
+                // `Configures`, `References`). All of these are structure, not dependence.
+                let free = *edge.weight() == EdgeType::Contains
+                    || (*edge.weight() != EdgeType::Imports && {
+                        let (from, to) = (&self.graph.graph[neighbor], &self.graph.graph[current]);
+                        from.node_type == NodeType::File && from.path == to.path
+                    });
+                let next = if free { d } else { d + 1 };
+                if dist.get(&neighbor).is_none_or(|&best| next < best) {
+                    dist.insert(neighbor, next);
+                    if free {
+                        queue.push_front((neighbor, next));
+                    } else {
+                        queue.push_back((neighbor, next));
+                    }
                 }
             }
         }
 
-        results
+        let mut dependents: Vec<(usize, NodeIndex)> = dist
+            .into_iter()
+            .filter(|&(_, depth)| depth > 0)
+            .map(|(idx, depth)| (depth, idx))
+            .collect();
+        dependents.sort_by(|a, b| {
+            let (x, y) = (&self.graph.graph[a.1], &self.graph.graph[b.1]);
+            a.0.cmp(&b.0)
+                .then_with(|| x.path.cmp(&y.path))
+                .then_with(|| x.line.cmp(&y.line))
+                .then_with(|| x.name.cmp(&y.name))
+                .then_with(|| x.kind.cmp(&y.kind))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        BlastWalk {
+            target: Some((start, matched)),
+            dependents,
+        }
     }
 
+    /// The dependents of a symbol (or, when it is not in the file, of the file), by
+    /// depth, then path, line and name.
+    pub fn check_blast_radius(&self, path: &str, symbol: &str) -> Vec<NodeData> {
+        let norm_path = normalize_rel_path(Path::new("."), path);
+        self.blast_walk(&norm_path, symbol)
+            .dependents
+            .into_iter()
+            .map(|(_, idx)| self.graph.graph[idx].clone())
+            .collect()
+    }
+
+    /// The symbol of this name in the file; of several, the first by line.
     pub fn find_symbol_in_path(&self, path: &str, name: &str) -> Option<NodeData> {
         let norm_path = normalize_rel_path(Path::new("."), path);
-        self.graph
-            .graph
-            .node_weights()
-            .find(|n| {
-                n.node_type != NodeType::File
-                    && !n.node_type.is_doc()
-                    && (n.path == norm_path
-                        || normalize_rel_path(Path::new("."), &n.path) == norm_path)
-                    && n.name == name
-            })
-            .cloned()
+        self.first_by_position(self.graph.graph.node_indices().filter(|i| {
+            let n = &self.graph.graph[*i];
+            n.node_type != NodeType::File
+                && !n.node_type.is_doc()
+                && (n.path == norm_path || normalize_rel_path(Path::new("."), &n.path) == norm_path)
+                && n.name == name
+        }))
+        .map(|idx| self.graph.graph[idx].clone())
     }
 
+    /// Files whose path contains `query`, by path.
     pub fn find_files(&self, query: &str) -> Vec<NodeData> {
         let query_lower = query.to_lowercase();
-        self.graph
+        let mut files: Vec<NodeData> = self
+            .graph
             .graph
             .node_weights()
             .filter(|n| {
                 n.node_type == NodeType::File && n.path.to_lowercase().contains(&query_lower)
             })
             .cloned()
-            .collect()
+            .collect();
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        files
     }
 
     pub fn get_all_file_paths(&self) -> Vec<String> {
@@ -360,6 +459,27 @@ impl QueryEngine {
                 }
             })
             .collect()
+    }
+}
+
+/// Path, then line, then name, then kind and byte offset: the order of `search` and `query`.
+fn symbol_order(a: &NodeData, b: &NodeData) -> std::cmp::Ordering {
+    (&a.path, a.line, &a.name, &a.kind, a.start_byte).cmp(&(
+        &b.path,
+        b.line,
+        &b.name,
+        &b.kind,
+        b.start_byte,
+    ))
+}
+
+/// The order within an outline: an own symbol by line, then name; an import by the
+/// imported node's path, line and name.
+fn symbol_order_path_first(a: &NodeData, b: &NodeData, import: bool) -> std::cmp::Ordering {
+    if import {
+        symbol_order(a, b)
+    } else {
+        (a.line, &a.name, &a.kind, a.start_byte).cmp(&(b.line, &b.name, &b.kind, b.start_byte))
     }
 }
 

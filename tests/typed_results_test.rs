@@ -247,7 +247,7 @@ fn doc_results_carry_levels_lines_and_scores() {
         .all(|h| h.level >= 1 && h.line >= 1 && h.score > 0));
     json("doc_search", &search);
 
-    let outline = engine.doc_outline_result("docs/guide.md").unwrap();
+    let outline = engine.doc_outline_result("docs/guide.md", None).unwrap();
     assert!(outline
         .items
         .iter()
@@ -323,7 +323,7 @@ fn doc_results_carry_levels_lines_and_scores() {
 fn doc_result_errors_carry_codes() {
     let (_dir, engine) = engine_for(DOCS);
     for err in [
-        engine.doc_outline_result("nope.md").unwrap_err(),
+        engine.doc_outline_result("nope.md", None).unwrap_err(),
         engine
             .doc_section_result("docs/guide.md", "nope", None)
             .unwrap_err(),
@@ -342,7 +342,7 @@ fn doc_result_errors_carry_codes() {
     assert_eq!(old.index_info().state, IndexState::Stale);
     for err in [
         old.doc_search_result("audit", 10).unwrap_err(),
-        old.doc_outline_result("README.md").unwrap_err(),
+        old.doc_outline_result("README.md", None).unwrap_err(),
         old.doc_links_result("src/main.rs", None).unwrap_err(),
         old.doc_terms_result(None, 3).unwrap_err(),
         old.api_surface_result(None).unwrap_err(),

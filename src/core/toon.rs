@@ -5,7 +5,9 @@ use crate::core::graph::{
     EntityMatch, NodeData, NodeType, OLD_SCHEMA_MESSAGE, STALE_INDEX_MESSAGE,
 };
 use crate::core::query_engine::QueryEngine;
-use std::collections::{HashMap, HashSet};
+use crate::core::results::BlastRadiusResult;
+use crate::core::typed_queries::GitView;
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Default size cap, in characters, for the documentation tools.
@@ -205,17 +207,22 @@ impl ToonFormatter {
         output
     }
 
-    pub fn format_blast_radius(path: &str, symbol: &str, results: &[NodeData]) -> String {
+    /// `radius` carries the counts of the walk, `results` the dependents it found
+    /// (depth, path, line, name order).
+    pub fn format_blast_radius(
+        path: &str,
+        symbol: &str,
+        results: &[NodeData],
+        radius: &BlastRadiusResult,
+    ) -> String {
         let mut output = format!("Resource: Blast Radius | Symbol: {} in {}\n", symbol, path);
 
         if results.is_empty() {
             output.push_str("No dependent components found.\n");
         } else {
             let mut dir_counts: HashMap<String, usize> = HashMap::new();
-            let mut unique_files: HashSet<String> = HashSet::new();
 
             for r in results {
-                unique_files.insert(r.path.clone());
                 let dir = std::path::Path::new(&r.path)
                     .parent()
                     .and_then(|p| p.to_str())
@@ -227,8 +234,12 @@ impl ToonFormatter {
             output.push_str("Summary:\n");
             output.push_str(&format!("- Total Impacted Nodes: {}\n", results.len()));
             output.push_str(&format!(
+                "- Direct Dependents: {} | Transitive: {}\n",
+                radius.direct, radius.transitive
+            ));
+            output.push_str(&format!(
                 "- Unique Files Affected: {}\n",
-                unique_files.len()
+                radius.files_affected
             ));
             output.push_str("- Affected Modules/Packages:\n");
 
@@ -269,6 +280,41 @@ impl ToonFormatter {
         output
     }
 
+    /// `Commit: 1a2b3c4 (clean) | at_head: yes`, adding `HEAD now: 9f8e7d6 (dirty)` when
+    /// the tree has moved. Empty when Git told nothing; a failing Git is `Git: <error>`.
+    fn commit_line(git: &GitView) -> String {
+        let short = |sha: &str| sha.chars().take(7).collect::<String>();
+        let state = |dirty: Option<bool>| match dirty {
+            Some(true) => " (dirty)",
+            Some(false) => " (clean)",
+            None => "",
+        };
+        let mut parts = Vec::new();
+        if let Some(commit) = &git.commit {
+            parts.push(format!("{}{}", short(commit), state(git.dirty)));
+        }
+        if let Some(head) = &git.head_now {
+            if git.at_head != Some(true) {
+                parts.push(format!("HEAD now: {}{}", short(head), state(git.dirty_now)));
+            }
+        }
+        match (&git.error, parts.is_empty()) {
+            (Some(error), true) => return format!("Git: {error}\n"),
+            (_, true) => return String::new(),
+            _ => {}
+        }
+        let mut line = format!("Commit: {}", parts.join(" | "));
+        if let Some(at_head) = git.at_head {
+            line.push_str(if at_head {
+                " | at_head: yes"
+            } else {
+                " | at_head: no"
+            });
+        }
+        line.push('\n');
+        line
+    }
+
     pub fn format_full_status(
         engine_opt: Option<&QueryEngine>,
         server_root: Option<&Path>,
@@ -292,6 +338,7 @@ impl ToonFormatter {
                 output.push_str(&format!("Tool Version: {}\n", meta.tool_version));
                 output.push_str(&format!("Root: {}\n", meta.root));
                 output.push_str(&format!("Built At: {}\n", meta.built_at));
+                output.push_str(&Self::commit_line(&engine.git_view()));
                 output.push_str(&format!("Files: {}\n", meta.file_count));
                 output.push_str(&format!("Symbols: {}\n", meta.symbol_count));
                 output.push_str(&format!("Edges: {}\n", meta.edge_count));

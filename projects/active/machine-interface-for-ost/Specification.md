@@ -325,24 +325,26 @@ On error the envelope has `"error": { "code": "...", "message": "..." }` and no 
 
 | Tool | Item fields | Summary fields |
 |:--|:--|:--|
-| `status` | (none; `results` is `[]`) | `tool_version`, `schema_version`, `root`, `built_at`, `commit`, `dirty`, `branch`, `head_now`, `dirty_now`, `at_head`, `git_error` (omitted when none), `stale`, `files`, `symbols`, `edges`, `doc_files`, `doc_sections`, `doc_references`, `api_operations`, `tree` (nested `{name, children}` to `max_depth`), `active_features` |
+| `status` | (none; `results` is `[]`) | `next_step` (only when the index is missing), `tool_version`, `schema_version`, `root`, `built_at`, `commit`, `dirty`, `branch`, `head_now`, `dirty_now`, `at_head`, `git_error` (omitted when none), `stale`, `files`, `symbols`, `edges`, `doc_files`, `doc_sections`, `doc_references`, `api_operations`, `tree` (nested `{name, children}` to `max_depth`), `active_features` |
 | `search`, `query` (query form) | `symbol`, `kind`, `node_type`, `path`, `line`, `end_line`, `role`, `preview` | — |
-| `query` (path form) | `symbol`, `kind`, `line`, `end_line` | `path` |
+| `query` (path form) | `symbol`, `kind`, `line`, `end_line`, `role` and `path` (import entries only) | `path` |
 | `query` (filename form) | `path` | — |
 | `fetch_symbol` | — | `path`, `symbol`, `line`, `end_line`, `source` |
 | `blast_radius` | `symbol`, `kind`, `node_type`, `path`, `line`, `end_line`, `depth` | `target_path`, `target_symbol` (omitted when `matched` is `file`), `target_line`, `matched`, `direct`, `transitive`, `total`, `files_affected`, `languages` |
-| `plan` | `symbol`, `kind`, `node_type`, `path`, `line`, `depth` | `target_symbol`, `target_path`, `target_line` |
+| `plan` | `symbol`, `kind`, `node_type`, `path`, `line`, `depth` | `requested`, `target_symbol`, `target_path`, `target_line` |
 | `doc_search` | `path`, `anchor`, `heading`, `level`, `line`, `score`, `snippet` | `query` |
 | `doc_outline` | `anchor`, `heading`, `level`, `depth`, `line`, `end_line` | `path`, `frontmatter` |
 | `doc_section` | — | `path`, `anchor`, `heading`, `line`, `end_line`, `text` |
-| `doc_links` | `direction` (`to_docs` or `to_code`), `path`, `anchor`, `heading`, `target_path`, `target_symbol`, `form` | `path`, `symbol` |
+| `doc_links` | `direction` (`to_docs` or `to_code`), `path`, `anchor`, `heading`, `target_path`, `target_symbol`, `form` | `path`, `symbol`, `total` |
 | `doc_terms` | `term`, `count`, `sections` (`[{path, anchor}]`) | `path_prefix` |
-| `api_surface` | `path`, `item` (`operation` or `schema`), `method`, `route`, `operation_id`, `name`, `summary`, `line` | — |
+| `api_surface` | `path`, `item` (`operation` or `schema`), `method`, `route`, `operation_id`, `name`, `summary`, `line` | `total` |
 | `modules` | `path`, `depth`, `files`, `code_files`, `symbols`, `doc_files`, `doc_sections` | `path_prefix`, `max_depth` |
 | `imports` | `path`, `line`, `text`, `module`, `package`, `language`, `resolved` | `query`, `files`, `imports` |
 | `init` | — | `status` (`refreshed` or `failed`), `message`, `commit`, `dirty` |
 
 Further rules:
+- Every list result also reports `truncated` and `total` in the envelope (the number of matches before any limit). In `status` the envelope's `truncated` says whether the tree was cut at `max_depth`.
+- In `blast_radius`, `direct`, `transitive`, `total`, `files_affected` and `languages` are always present (`0` / `[]` when nothing depends on the target), and every item has `depth`.
 - `symbol` is qualified when the symbol lies inside another symbol's range in the same file (`Graph.load`); otherwise it is the bare name. A Rust `impl Trait for Type` block is named after `Type`. Qualified names are **not unique** (two `impl From<…> for E` blocks both give `E.from`), so a citation needs `path` and `line` as well.
 - Lines are 1-based. `end_line` is the last line of the node's byte range.
 - `contract` is the JSON contract version, which starts at 1. It is independent of `schema_version`.

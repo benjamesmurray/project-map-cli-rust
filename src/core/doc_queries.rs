@@ -60,6 +60,17 @@ pub struct DocOutlineView {
     pub entries: Vec<OutlineEntry>,
 }
 
+impl DocOutlineView {
+    /// Keeps the headings at tree depth <= `max_depth` (a top section is depth 1,
+    /// whatever its heading level) and says whether any were dropped.
+    pub fn cut_to_depth(mut self, max_depth: usize) -> (Self, bool) {
+        let before = self.entries.len();
+        self.entries.retain(|e| e.depth < max_depth);
+        let truncated = self.entries.len() < before;
+        (self, truncated)
+    }
+}
+
 /// The raw text of one section (subsections included).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocSectionView {

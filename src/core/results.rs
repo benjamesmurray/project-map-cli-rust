@@ -123,8 +123,8 @@ impl IndexInfo {
                 IndexState::Ok
             },
             schema_version: Some(meta.map_or(0, |m| m.schema_version)),
-            commit: None,
-            dirty: None,
+            commit: meta.and_then(|m| m.git_commit.clone()),
+            dirty: meta.and_then(|m| m.git_dirty),
             stale: Some(stale),
         }
     }
@@ -279,7 +279,7 @@ pub enum BlastMatch {
 }
 
 /// A dependent in a blast radius. `depth` is 1 for a direct dependent and 2 or more
-/// for a transitive one; it is `None` until the breadth-first walk produces it.
+/// for a transitive one.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BlastItem {
     pub symbol: String,
@@ -290,12 +290,12 @@ pub struct BlastItem {
     pub line: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_line: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depth: Option<usize>,
+    pub depth: usize,
 }
 
-/// `blast_radius`. `direct`, `transitive` and `files_affected` are `None` until the
-/// breadth-first walk (which defines depth) computes them.
+/// `blast_radius`. `direct` counts dependents (importers, stream and config links),
+/// not callers: the graph has no call edges. Every count covers all dependents, not
+/// only the listed items.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BlastRadiusResult {
     pub target_path: String,
@@ -305,14 +305,14 @@ pub struct BlastRadiusResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_line: Option<usize>,
     pub matched: BlastMatch,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub direct: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transitive: Option<usize>,
+    /// Dependents at depth 1.
+    pub direct: usize,
+    /// Dependents at depth 2 or more.
+    pub transitive: usize,
     pub total: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub files_affected: Option<usize>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// Distinct paths of dependents, excluding the target's own file.
+    pub files_affected: usize,
+    /// Distinct languages of the affected files, sorted.
     pub languages: Vec<String>,
     pub truncated: bool,
     pub items: Vec<BlastItem>,
@@ -327,8 +327,8 @@ pub struct PlanItem {
     pub node_type: NodeType,
     pub path: String,
     pub line: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depth: Option<usize>,
+    /// Edges from the target (breadth-first, shortest).
+    pub depth: usize,
 }
 
 /// `plan`. The target is what the requested name resolved to; it is absent when
@@ -357,8 +357,9 @@ pub struct TreeNode {
     pub children: Vec<TreeNode>,
 }
 
-/// `status`. The Git fields and `git_error` are filled from schema 4 on; until then
-/// they are `null` / omitted.
+/// `status`. `commit`, `dirty` and `branch` come from the index (schema 4);
+/// `head_now`, `dirty_now` and `at_head` are read at query time. Git fields are
+/// `null` when unknown. A missing index is a `StatusResult` too (`missing`), not an error.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct StatusResult {
     pub tool_version: String,
@@ -383,6 +384,54 @@ pub struct StatusResult {
     pub api_operations: usize,
     pub tree: TreeNode,
     pub active_features: Vec<String>,
+    /// Whether the tree was cut at `max_depth`. Reported in the envelope's `truncated`.
+    #[serde(skip)]
+    pub truncated: bool,
+    /// Whether an index was loaded. Reported in the envelope's `index.state`.
+    #[serde(skip)]
+    pub missing: bool,
+    /// What to do about a missing index.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_step: Option<String>,
+}
+
+pub const MISSING_INDEX_NEXT_STEP: &str =
+    "Run `project-map refresh` (or call the `init` tool) to build the index.";
+
+impl StatusResult {
+    /// The result when no index is loaded: zero counts, an empty tree, the Git fields
+    /// `null`, and the instruction to build one.
+    pub fn missing(active_features: Vec<String>) -> Self {
+        Self {
+            tool_version: env!("CARGO_PKG_VERSION").to_string(),
+            schema_version: 0,
+            root: String::new(),
+            built_at: String::new(),
+            commit: None,
+            dirty: None,
+            branch: None,
+            head_now: None,
+            dirty_now: None,
+            at_head: None,
+            git_error: None,
+            stale: false,
+            files: 0,
+            symbols: 0,
+            edges: 0,
+            doc_files: 0,
+            doc_sections: 0,
+            doc_references: 0,
+            api_operations: 0,
+            tree: TreeNode {
+                name: ".".to_string(),
+                children: Vec::new(),
+            },
+            active_features,
+            truncated: false,
+            missing: true,
+            next_step: Some(MISSING_INDEX_NEXT_STEP.to_string()),
+        }
+    }
 }
 
 // --- Documentation tools ---
@@ -688,32 +737,34 @@ mod tests {
     }
 
     #[test]
-    fn blast_radius_omits_what_the_walk_has_not_computed() {
+    fn blast_radius_always_carries_its_counts() {
         let result = BlastRadiusResult {
             target_path: "a.rs".into(),
             target_symbol: None,
             target_line: None,
             matched: BlastMatch::File,
-            direct: None,
-            transitive: None,
+            direct: 0,
+            transitive: 0,
             total: 0,
-            files_affected: None,
+            files_affected: 0,
             languages: vec![],
             truncated: false,
             items: vec![],
         };
         assert_eq!(
             serde_json::to_value(&result).unwrap(),
-            json!({"target_path": "a.rs", "matched": "file", "total": 0,
+            json!({"target_path": "a.rs", "matched": "file", "direct": 0, "transitive": 0,
+                   "total": 0, "files_affected": 0, "languages": [],
                    "truncated": false, "items": []})
         );
         let found = BlastRadiusResult {
             target_symbol: Some("load".into()),
             target_line: Some(4),
             matched: BlastMatch::Symbol,
-            direct: Some(1),
-            transitive: Some(0),
-            files_affected: Some(1),
+            direct: 1,
+            transitive: 0,
+            total: 1,
+            files_affected: 1,
             languages: vec!["rust".into()],
             ..result
         };

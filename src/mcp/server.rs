@@ -53,7 +53,7 @@ pub struct QueryTool {
 
 #[mcp_tool(
     name = "blast_radius",
-    description = "Who depends on this symbol, across files and languages (grep cannot follow imports). Use before changing or deleting a function, class or type to see every file that imports or calls it."
+    description = "Who depends on this symbol, across files and languages (grep cannot follow imports). Use before changing or deleting a function, class or type to see every file that imports it, with direct and transitive counts. Counts dependents (importers, stream and config links), not callers: the index has no call edges."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct BlastRadiusTool {
@@ -505,8 +505,8 @@ impl ServerHandler for McpServerHandler {
 
                 if let Some(ref engine) = *self.engine.read().unwrap() {
                     let norm_path = normalize_rel_path(Path::new("."), &args.path);
-                    let results = engine.check_blast_radius(&norm_path, &args.symbol);
-                    ToonFormatter::format_blast_radius(&norm_path, &args.symbol, &results)
+                    let (radius, results) = engine.blast_with_nodes(&norm_path, &args.symbol);
+                    ToonFormatter::format_blast_radius(&norm_path, &args.symbol, &results, &radius)
                 } else {
                     QueryError::index_missing().message
                 }

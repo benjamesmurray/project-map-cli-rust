@@ -31,7 +31,7 @@ A high-performance, idiomatic Rust reimplementation of `project-map-cli`. This t
   - **MCP Tools:**
     - `status`: Workspace context, component tree, and active specification feature discovery (filters only valid features containing `Specification.md`, `Tasks.json`, or `.deliver_meta.json`).
     - `query`: Search for symbols or file outlines.
-    - `blast_radius`: Identifies all components and files that depend on or import a specific symbol.
+    - `blast_radius`: Identifies all files that depend on or import a specific symbol, each at its shortest depth, with direct and transitive counts. It counts dependents (importers, stream and config links), not callers: the index has no call edges.
     - `plan`: Analyze the architectural impact (fan-out) of a symbol.
     - `search`: Search for logic using natural language keywords (e.g., 'auth', 'database').
     - `fetch_symbol`: Extract raw source code for a specific class or function.
@@ -72,7 +72,7 @@ project-map find --query "MyService" --index ./external-map
 ```
 
 ### 3. Analyze Blast Radius
-See everything that might break if you change a specific symbol.
+See everything that might break if you change a specific symbol: each dependent at its shortest depth (1 is a direct importer), the target's own file not included. `direct` counts dependents, not callers.
 ```bash
 project-map blast --path "src/core/utils.rs" --symbol "my_helper"
 ```
