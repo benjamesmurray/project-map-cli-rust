@@ -2,6 +2,7 @@ use crate::core::docs::{self, DocOutline, Resolution, ResolveTables, SymbolRef};
 use crate::core::graph::{
     EdgeType, ImportEntry, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION,
 };
+use crate::core::import_resolve::{resolve_by_suffix, SuffixResolution};
 use crate::core::parser::package_name;
 use crate::core::parser::CodeParser;
 use crate::core::rust_use::{self, CrateInfo, RustTarget};
@@ -9,8 +10,11 @@ use crate::core::utils::{normalize_rel_path, path_to_fqn, resolve_import_path};
 use crate::error::Result;
 use ignore::WalkBuilder;
 use petgraph::graph::NodeIndex;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+/// Ambiguous imports named in the debug log; the rest are only counted.
+const AMBIGUOUS_LOG_LIMIT: usize = 20;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink as sys_symlink;
@@ -98,7 +102,7 @@ impl Orchestrator {
         let git_state = crate::core::git::read_git_state(root, crate::core::git::GitBudget::BUILD);
 
         let mut outlines = Vec::new();
-        let mut fqn_to_node = HashMap::new();
+        let mut fqn_to_node = BTreeMap::new();
         let mut path_to_node = HashMap::new();
         let mut doc_inputs = Vec::new();
         let mut fs_paths: HashMap<String, PathBuf> = HashMap::new();
@@ -108,6 +112,8 @@ impl Orchestrator {
         let mut builder = WalkBuilder::new(root);
         let out_dir_owned = out_dir.to_path_buf();
         let can_out_clone = can_out.clone();
+        // Directory entries are visited by file name, so node and edge order depend only on the tree.
+        builder.sort_by_file_name(|a, b| a.cmp(b));
         builder.hidden(false).parents(false).filter_entry(move |e| {
             let name = e.file_name().to_string_lossy();
             if name == ".project-map"
@@ -244,6 +250,8 @@ impl Orchestrator {
         let mut import_entries: Vec<ImportEntry> = Vec::new();
         let mut crate_cache: HashMap<String, CrateInfo> = HashMap::new();
         let symbols_by_file = symbol_lookup(&self.graph.graph);
+        let fqn_set: BTreeSet<String> = fqn_to_node.keys().cloned().collect();
+        let mut ambiguous_imports = 0usize;
         for outline in outlines {
             let norm_from = normalize_rel_path(root, &outline.path);
             let Some(&from_node) = path_to_node
@@ -292,20 +300,27 @@ impl Orchestrator {
                         }
                     }
 
-                    // Strategy 3: FQN Suffix match (Fallback)
+                    // Strategy 3: whole-segment suffix match (fallback); a tie is left unlinked
                     if !resolved {
-                        let matching_fqn = fqn_to_node.keys().find(|&k| {
-                            k.ends_with(&imp)
-                                || imp.ends_with(k)
-                                || (k.contains('.')
-                                    && imp.contains('.')
-                                    && k.split('.').next_back() == imp.split('.').next_back()
-                                    && k.split('.').rev().nth(1) == imp.split('.').rev().nth(1))
-                        });
-                        if let Some(key) = matching_fqn {
-                            let &to_node = fqn_to_node.get(key).unwrap();
-                            self.graph.add_edge(from_node, to_node, EdgeType::Imports);
-                            resolved = true;
+                        match resolve_by_suffix(&imp, &fqn_set) {
+                            SuffixResolution::Unique(fqn) => {
+                                self.graph.add_edge(
+                                    from_node,
+                                    fqn_to_node[&fqn],
+                                    EdgeType::Imports,
+                                );
+                                resolved = true;
+                            }
+                            SuffixResolution::Ambiguous(candidates) => {
+                                if ambiguous_imports < AMBIGUOUS_LOG_LIMIT {
+                                    tracing::debug!(
+                                        "ambiguous import {imp:?} in {norm_from}: {}",
+                                        candidates.join(", ")
+                                    );
+                                }
+                                ambiguous_imports += 1;
+                            }
+                            SuffixResolution::None => {}
                         }
                     }
                 }
@@ -327,6 +342,7 @@ impl Orchestrator {
                 });
             }
         }
+        tracing::debug!("imports left unlinked by an ambiguous suffix match: {ambiguous_imports}");
         import_entries
             .sort_by(|a, b| (&a.path, a.line, &a.module).cmp(&(&b.path, b.line, &b.module)));
         self.graph.imports = import_entries;

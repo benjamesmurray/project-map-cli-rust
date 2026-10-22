@@ -66,6 +66,15 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Build { root, out } | Commands::Refresh { root, out } => {
+            // `PROJECT_MAP_LOG=debug` shows the build's debug log (ambiguous imports) on stderr.
+            let level = match std::env::var("PROJECT_MAP_LOG").as_deref() {
+                Ok("debug") => tracing::Level::DEBUG,
+                _ => tracing::Level::WARN,
+            };
+            let _ = tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .with_max_level(level)
+                .try_init();
             println!("Building project map index with rotation...");
             // Print the readable message (e.g. NewerIndex says what to do), not Debug.
             if let Err(e) =

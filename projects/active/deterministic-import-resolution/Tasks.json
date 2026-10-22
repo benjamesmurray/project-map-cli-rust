@@ -39,7 +39,7 @@
       "id": "1.5",
       "title": "Phase 1 Gate",
       "description": "Phase 1 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase1_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 2.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "1.2",
         "1.3",
@@ -50,7 +50,7 @@
       "id": "2.1",
       "title": "Phase 2: Wire Strategy 3 and Count Ambiguous Imports",
       "description": "In orchestrator pass 2, replace the HashMap keys().find() fallback with resolve_by_suffix over an ordered FQN set (keep fqn_to_node for lookups, or make it a BTreeMap). Unique adds the Imports edge and resolved=true; Ambiguous and None leave resolved=false. Count Ambiguous results and log the first 20 at debug level with the import and its candidates. Strategies 1 and 2 and the Rust use resolver unchanged. Tests on the 1.3 fixture: the README's expected edge list exactly, resolved flags through the imports query, the ambiguous count. Update JSON goldens only where values from import edges change; list each changed golden and the reason for the phase report. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.5"
       ]
@@ -59,7 +59,7 @@
       "id": "2.2",
       "title": "Phase 2: Sorted File Walk",
       "description": "Make pass 1 deterministic: WalkBuilder::sort_by_file_name (or collect and sort paths before parsing), so node and edge order depend only on the tree. Test: build the docs, imports and ambiguous_imports fixtures in two differently named tempdirs and assert the index files are byte-identical after removing IndexMeta's built_at, builder_pid and root (and Git fields). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.5"
       ]
@@ -68,7 +68,7 @@
       "id": "2.3",
       "title": "Phase 2: HashMap/HashSet Audit",
       "description": "Audit every HashMap and HashSet in src/ (about 45 uses). For each, record in a table: file:line, what it holds, whether its iteration order can reach graph construction, a side table or tool output, and the fix (BTreeMap/BTreeSet, sort before iterating, or lookup-only with a one-line code comment saying why order is irrelevant). Apply the fixes. Put the table in the phase report. cargo test passes.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "2.1",
         "2.2"

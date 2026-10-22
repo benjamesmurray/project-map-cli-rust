@@ -153,7 +153,9 @@ fn test_regression_d5_path_normalization_query_variants() {
 /// (c) D7: File outline returns the file's own node and labels imports distinctly.
 #[test]
 fn test_regression_d7_file_outline_node_identity_and_imports() {
-    let root = Path::new("tests/fixtures");
+    // Only the Python fixtures: `module_b` also exists as a Lua module, so over all of
+    // `tests/fixtures` the import is a tie and is (correctly) left unlinked.
+    let root = Path::new("tests/fixtures/python");
     let temp = tempdir().expect("Failed to create tempdir");
     let out = temp.path().join("index.json");
 
