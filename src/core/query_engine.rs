@@ -143,6 +143,8 @@ impl QueryEngine {
             self.graph
                 .graph
                 .edges_directed(idx, petgraph::Direction::Outgoing)
+                // Doc -> code references belong to `doc_links`, not to an outline.
+                .filter(|edge| *edge.weight() != crate::core::graph::EdgeType::References)
                 .map(|edge| {
                     let mut node = self.graph.graph[edge.target()].clone();
                     if *edge.weight() == crate::core::graph::EdgeType::Imports {

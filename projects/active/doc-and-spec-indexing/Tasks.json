@@ -288,7 +288,7 @@
       "id": "7.1",
       "title": "Phase 7: Performance and Size Verification",
       "description": "Repeat the 1.1 measurements with the 0.3.0 release build on this repository and /opt/wde (build into a scratch out dir, not /opt/wde's live index, so running 0.2.x servers are not involved). Record time, index size and the new doc counts in projects/active/doc-and-spec-indexing/reports/verification.md next to the baseline; indexing time growth must be at most 20 % for both (Verification 5). Also record the outline+terms size (chars / 4) on OST-Manager's docs/ (user story 2). If the limit fails, profile and fix before continuing.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "1.1",
         "6.1",
@@ -299,7 +299,7 @@
       "id": "7.2",
       "title": "Phase 7: Quality Gate",
       "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher and regression suites) all clean. Walk the Specification's In-Scope bullets, Technical Constraints and Verification Criteria one by one and map each to the task and test that covers it in reports/verification.md; any gap becomes a new task before release.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "6.2",
         "7.1"

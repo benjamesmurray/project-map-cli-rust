@@ -207,6 +207,43 @@ fn code_search_ignores_documentation() {
     );
 }
 
+#[test]
+fn every_existing_code_tool_skips_doc_and_api_nodes() {
+    let fx = fixture();
+    let e = &fx.engine;
+    // Doc headings and API operations are never found as code symbols.
+    assert!(e.find_symbol_in_path(ADR_004, "decision").is_none());
+    assert!(e.find_symbol_in_path(ADR_004, "Decision").is_none());
+    assert!(e.analyze_impact("Usage").is_empty());
+    assert!(e.analyze_impact("GET /entries").is_empty());
+    // The symbol count is code-only: it covers at least the code symbols in file
+    // outlines, and a Markdown-only project has sections but no symbols.
+    let outline_symbols: usize = e
+        .get_all_file_paths()
+        .iter()
+        .map(|p| {
+            e.get_file_outline(p)
+                .iter()
+                .filter(|n| !n.node_type.is_doc())
+                .count()
+        })
+        .sum();
+    // An outline lists a file's own nodes; a doc's references to code are not entries.
+    assert!(e
+        .get_file_outline("docs/links.md")
+        .iter()
+        .all(|n| n.node_type.is_doc()));
+    assert!(outline_symbols > 0 && e.get_symbol_count() >= outline_symbols);
+    let md_only = project_with(&[("a.md", "# One\n\n## Two\n"), ("b.md", "# Three\n")]);
+    assert_eq!(md_only.engine.get_symbol_count(), 0);
+    assert!(md_only.engine.doc_outline("a.md").is_ok());
+    // Docs mentioning a symbol are not impact dependents either.
+    assert!(e
+        .analyze_impact("append")
+        .iter()
+        .all(|n| !n.node_type.is_doc() && !n.path.ends_with(".md")));
+}
+
 const ADR_004: &str = "docs/adr/004-immutable-audit-log.md";
 
 #[test]
