@@ -1,6 +1,7 @@
 use crate::core::docs;
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
@@ -42,6 +43,8 @@ pub struct FileOutline {
 
 pub struct CodeParser {
     parser: Parser,
+    /// Compiled queries by file extension; compiling one per file dominated indexing time.
+    queries: HashMap<String, Query>,
 }
 
 impl Default for CodeParser {
@@ -54,6 +57,7 @@ impl CodeParser {
     pub fn new() -> Self {
         Self {
             parser: Parser::new(),
+            queries: HashMap::new(),
         }
     }
 
@@ -212,11 +216,15 @@ impl CodeParser {
             _ => unreachable!(),
         };
 
-        let query = Query::new(&ts_language, query_str)
-            .map_err(|e| AppError::Parser(format!("Failed to create query: {}", e)))?;
+        if !self.queries.contains_key(extension) {
+            let compiled = Query::new(&ts_language, query_str)
+                .map_err(|e| AppError::Parser(format!("Failed to create query: {}", e)))?;
+            self.queries.insert(extension.to_string(), compiled);
+        }
+        let query = &self.queries[extension];
 
         let mut cursor = QueryCursor::new();
-        let mut matches = cursor.matches(&query, tree.root_node(), content.as_bytes());
+        let mut matches = cursor.matches(query, tree.root_node(), content.as_bytes());
 
         let mut symbols = Vec::new();
         let mut imports = Vec::new();

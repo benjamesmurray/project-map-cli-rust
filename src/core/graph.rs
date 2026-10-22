@@ -290,7 +290,7 @@ impl ProjectGraph {
             doc_terms: self.doc_terms.clone(),
             imports: self.imports.clone(),
         };
-        let json = serde_json::to_string_pretty(&serializable)?;
+        let json = serde_json::to_string(&serializable)?;
         Self::save_atomic_with_hook(path, &json, |_| Ok(()))
     }
 
