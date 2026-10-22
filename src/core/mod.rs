@@ -1,3 +1,4 @@
+pub mod doc_queries;
 pub mod docs;
 pub mod graph;
 pub mod lock;

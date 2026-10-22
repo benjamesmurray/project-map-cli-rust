@@ -44,7 +44,7 @@ impl RetryPolicy {
 
 #[derive(Debug)]
 pub struct QueryEngine {
-    graph: ProjectGraph,
+    pub(crate) graph: ProjectGraph,
 }
 
 impl QueryEngine {
@@ -99,7 +99,8 @@ impl QueryEngine {
             .graph
             .node_weights()
             .filter(|n| {
-                if n.node_type == NodeType::File {
+                // `search` is code-only; documentation has its own tools.
+                if n.node_type == NodeType::File || n.node_type.is_doc() {
                     return false;
                 }
 
@@ -156,11 +157,9 @@ impl QueryEngine {
     }
 
     pub fn analyze_impact(&self, name: &str) -> Vec<NodeData> {
-        let node_idx = self
-            .graph
-            .graph
-            .node_indices()
-            .find(|i| self.graph.graph[*i].name == name);
+        let node_idx = self.graph.graph.node_indices().find(|i| {
+            self.graph.graph[*i].name == name && !self.graph.graph[*i].node_type.is_doc()
+        });
 
         if let Some(start_node) = node_idx {
             // Impact: who do I depend on? (Outgoing edges)
@@ -184,6 +183,7 @@ impl QueryEngine {
             (node.path == norm_path || normalize_rel_path(Path::new("."), &node.path) == norm_path)
                 && node.name == symbol
                 && node.node_type != NodeType::File
+                && !node.node_type.is_doc()
         });
 
         let start_node = if let Some(idx) = node_idx {
@@ -219,6 +219,10 @@ impl QueryEngine {
                 .graph
                 .neighbors_directed(current, petgraph::Direction::Incoming)
             {
+                // Documentation that mentions a symbol is not a code dependent; `doc_links` lists it.
+                if self.is_doc_node(neighbor) {
+                    continue;
+                }
                 if visited.insert(neighbor) {
                     results.push(self.graph.graph[neighbor].clone());
                     stack.push(neighbor);
@@ -236,6 +240,7 @@ impl QueryEngine {
             .node_weights()
             .find(|n| {
                 n.node_type != NodeType::File
+                    && !n.node_type.is_doc()
                     && (n.path == norm_path
                         || normalize_rel_path(Path::new("."), &n.path) == norm_path)
                     && n.name == name
@@ -264,11 +269,17 @@ impl QueryEngine {
             .collect()
     }
 
+    /// A documentation node, or a Markdown file (whose own edges are doc -> code links).
+    pub(crate) fn is_doc_node(&self, idx: petgraph::graph::NodeIndex) -> bool {
+        let node = &self.graph.graph[idx];
+        node.node_type.is_doc() || (node.node_type == NodeType::File && node.path.ends_with(".md"))
+    }
+
     pub fn get_symbol_count(&self) -> usize {
         self.graph
             .graph
             .node_weights()
-            .filter(|n| n.node_type != NodeType::File)
+            .filter(|n| n.node_type != NodeType::File && !n.node_type.is_doc())
             .count()
     }
 

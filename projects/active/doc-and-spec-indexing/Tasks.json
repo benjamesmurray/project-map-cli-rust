@@ -179,14 +179,14 @@
       "id": "5.1",
       "title": "Phase 5: Shared TOON Truncation Rule",
       "description": "In src/core/toon.rs, one helper used by every new formatter: cap output at a given character budget (default 4000), cut on a line or char boundary (never mid UTF-8), and append a single explicit marker stating that output was truncated and how to see more (e.g. raise max_chars or narrow the query). Unit tests: under budget unchanged, over budget truncated with marker, multibyte text at the boundary. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": []
     },
     {
       "id": "5.2",
       "title": "Phase 5: search_docs",
       "description": "QueryEngine::search_docs(query, limit=10): rank DocSection nodes by the existing keyword/topic scoring extended to heading text and section text (section text read on demand from disk by byte range, never from the index), plus frontmatter id, title and tags scoring toward the file's first section. Each hit: path, anchor, heading and a two-line snippet. TOON formatter with truncation. Tests (user story 1): doc_search('audit log') on the fixture returns the expected sections in the expected order with path, anchor and snippet; a frontmatter-only match (title/tag/id) surfaces the file's first section; limit is honoured; a file changed on disk after indexing does not crash (snippet best effort). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.1",
         "5.1"
@@ -196,7 +196,7 @@
       "id": "5.3",
       "title": "Phase 5: doc_outline",
       "description": "QueryEngine::doc_outline(path): heading tree with anchors (indented by depth) plus the file's DocMeta when present; path accepts './x', 'x' and absolute forms. Unknown or non-Markdown path returns a clear error. TOON formatter with truncation. Tests: fixture ADR outline including frontmatter, nested tree indentation, path variants identical, unknown path message. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.1",
         "5.1"
@@ -206,7 +206,7 @@
       "id": "5.4",
       "title": "Phase 5: doc_section",
       "description": "QueryEngine::doc_section(path, anchor, max_chars=4000): read the section's byte range from disk on demand (like fetch_symbol) and return raw text, truncated via 5.1 with the marker. Unknown anchor returns an error listing the file's anchors (capped). If the file changed and the range is out of bounds or not on a char boundary, return a clear stale-range message suggesting refresh. Tests: exact text for a fixture section, nested section includes its subsections, truncation marker at a small max_chars, unknown anchor, stale range after the fixture copy is edited. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.1",
         "5.1"
@@ -216,7 +216,7 @@
       "id": "5.5",
       "title": "Phase 5: doc_links",
       "description": "QueryEngine::doc_links(path, symbol?): for a code file (optionally a symbol in it), list the DocSections with References edges to it (code -> docs: path, anchor, heading); for a Markdown file, list each of its sections with the files and symbols it references (docs -> code). Path variants normalised. TOON formatter with truncation. Tests (user story 3) on fixture equivalents of doc_links(path='src/audit/log.rs', symbol='append') and doc_links(path='docs/adr/004.md'): exact expected lists in both directions; a file with no links returns an explicit empty result. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.4",
         "5.1"
@@ -226,7 +226,7 @@
       "id": "5.6",
       "title": "Phase 5: doc_terms and api_surface",
       "description": "QueryEngine::doc_terms(path_prefix?, limit=30): merge stored per-directory terms under the prefix (all when omitted), re-sum counts, re-order by count desc then term asc, keep 5 sections per term, apply limit. QueryEngine::api_surface(path?): for each OpenAPI file (or the one given), 'METHOD /path (operationId)' lines with summary, then schema names. TOON formatters with truncation. Tests (user story 4): api_surface on the fixtures lists the exact operations and schemas for YAML and JSON specs; doc_terms with and without a prefix, limit honoured, deterministic ordering. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.5",
         "4.1",
@@ -237,7 +237,7 @@
       "id": "5.7",
       "title": "Phase 5: Stale-Index Message in Doc Tools",
       "description": "Every doc query (search_docs, doc_outline, doc_section, doc_links, doc_terms, api_surface) returns the shared stale message from 1.4 when the loaded index is stale (no meta or schema < 3), instead of empty or misleading results; nothing is written. Tests: each of the six against the v2 fixture returns the message and leaves the index bytes unchanged. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.4",
         "5.2",
@@ -251,7 +251,7 @@
       "id": "5.8",
       "title": "Phase 5: Token Budget Check",
       "description": "Test (user story 2): doc_outline for each Markdown file in tests/fixtures/docs/ plus doc_terms('tests/fixtures/docs') together are under 2000 tokens, measured as characters / 4. If over, tighten formatting (not the fixture). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "5.3",
         "5.6"

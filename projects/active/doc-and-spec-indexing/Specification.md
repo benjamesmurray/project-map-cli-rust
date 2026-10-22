@@ -100,7 +100,8 @@ New `NodeType` variants: `DocSection`, `ApiOperation`, `ApiSchema`. `EdgeType::R
 - `src/core/graph.rs`: `schema_version` check on load; `IndexMeta` gains `#[serde(default)]` fields `doc_file_count`, `section_count`, `reference_count`, `unresolved_mention_count`, `ambiguous_mention_count`, `api_operation_count`; side tables `doc_meta` and `doc_terms`.
 - `src/core/orchestrator.rs`: doc pass, link pass, forward guard before writing.
 - `src/core/parser.rs`: OpenAPI files skip `extract_yaml_symbols`.
-- `src/core/query_engine.rs`: `search_docs`, `doc_outline`, `doc_section`, `doc_links`, `doc_terms`, `api_surface`; the stale-index message.
+- `src/core/doc_queries.rs` (new, an `impl QueryEngine` block kept apart from `query_engine.rs`): `search_docs`, `doc_outline`, `doc_section`, `doc_links`, `doc_terms`, `api_surface`. Each returns `Result<_, String>`; the `Err` text is shown as is (the stale-index message, an unknown path or anchor, a stale range).
+- `src/core/query_engine.rs`: the existing code tools stay **code-only**: `find_symbols`, `analyze_impact`, `check_blast_radius` (docs that mention a symbol are not code dependents), `find_symbol_in_path` and the symbol count skip doc and API nodes.
 - `src/core/toon.rs`: formatters for each, with the shared truncation rule.
 - `src/mcp/server.rs`: six new tools registered beside the existing seven; all thirteen descriptions rewritten.
 - `src/error.rs`: `AppError::NewerIndex { found, supported }`.

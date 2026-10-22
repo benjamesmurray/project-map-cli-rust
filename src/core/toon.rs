@@ -1,7 +1,33 @@
+use crate::core::doc_queries::{
+    ApiFileView, DocLinksView, DocOutlineView, DocSearch, DocSectionView, DocTermsView,
+};
 use crate::core::graph::{EntityMatch, NodeData, NodeType, STALE_INDEX_MESSAGE};
 use crate::core::query_engine::QueryEngine;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+/// Default size cap, in characters, for the documentation tools.
+pub const DEFAULT_MAX_CHARS: usize = 4000;
+
+/// Caps `text` at `max_chars` characters. Over the cap, the text is cut at the
+/// last line break inside the budget (or at the budget, on a character boundary,
+/// if the kept part has none) and one marker line is appended. The marker is not
+/// counted in the budget.
+pub fn truncate_output(text: &str, max_chars: usize) -> String {
+    let Some((cut, _)) = text.char_indices().nth(max_chars) else {
+        return text.to_string();
+    };
+    let kept = &text[..cut];
+    let kept = match kept.rfind('\n') {
+        Some(newline) if newline > 0 => &kept[..newline],
+        _ => kept,
+    };
+    format!(
+        "{}\n[truncated at {} characters: raise max_chars or narrow the query to see more]",
+        kept.trim_end_matches('\n'),
+        max_chars
+    )
+}
 
 pub struct ToonFormatter;
 
@@ -410,6 +436,164 @@ impl ToonFormatter {
         output
     }
 
+    /// Ranked doc sections: `- path#anchor | Heading` with up to two snippet lines.
+    pub fn format_doc_search(query: &str, result: &DocSearch, max_chars: usize) -> String {
+        let mut out = format!("Resource: Docs | Query: {}\n", query);
+        if result.total > result.hits.len() {
+            out.push_str(&format!(
+                "Matches Found: {} (showing {})\n",
+                result.total,
+                result.hits.len()
+            ));
+        } else {
+            out.push_str(&format!("Matches Found: {}\n", result.total));
+        }
+        for hit in &result.hits {
+            out.push_str(&format!(
+                "- {}#{} | {}\n",
+                hit.path, hit.anchor, hit.heading
+            ));
+            for line in &hit.snippet {
+                out.push_str(&format!("    {}\n", line));
+            }
+        }
+        if let Some(first) = result.hits.first() {
+            out.push_str(&format!(
+                "\nNext Step: `doc_section` with path {} and anchor {} for the full text.",
+                first.path, first.anchor
+            ));
+        }
+        truncate_output(&out, max_chars)
+    }
+
+    /// Frontmatter on one line, then the heading tree: `heading #anchor`, two spaces per depth.
+    pub fn format_doc_outline(view: &DocOutlineView, max_chars: usize) -> String {
+        let mut out = format!("Resource: DocOutline | Path: {}\n", view.path);
+        if let Some(meta) = &view.meta {
+            let mut fields = Vec::new();
+            for (key, value) in [
+                ("id", &meta.id),
+                ("title", &meta.title),
+                ("status", &meta.status),
+                ("date", &meta.date),
+                ("domain", &meta.domain),
+            ] {
+                if let Some(v) = value {
+                    fields.push(format!("{key}={v}"));
+                }
+            }
+            if !meta.tags.is_empty() {
+                fields.push(format!("tags={}", meta.tags.join(",")));
+            }
+            if !meta.supersedes.is_empty() {
+                fields.push(format!("supersedes={}", meta.supersedes.join(",")));
+            }
+            out.push_str(&format!("Frontmatter: {}\n", fields.join(" | ")));
+        }
+        if view.entries.is_empty() {
+            out.push_str("(no headings)\n");
+        }
+        for e in &view.entries {
+            out.push_str(&format!(
+                "{}{} #{}\n",
+                "  ".repeat(e.depth),
+                e.heading,
+                e.anchor
+            ));
+        }
+        truncate_output(out.trim_end(), max_chars)
+    }
+
+    /// The section text between `---` lines; truncation applies to the text only.
+    pub fn format_doc_section(view: &DocSectionView, max_chars: usize) -> String {
+        format!(
+            "Resource: DocSection | Path: {} | Anchor: {}\n---\n{}\n---",
+            view.path,
+            view.anchor,
+            truncate_output(&view.text, max_chars)
+        )
+    }
+
+    pub fn format_doc_links(view: &DocLinksView, max_chars: usize) -> String {
+        let mut out = String::new();
+        match view {
+            DocLinksView::CodeToDocs { path, symbol, refs } => {
+                out.push_str(&format!("Resource: DocLinks | Path: {path}"));
+                if let Some(symbol) = symbol {
+                    out.push_str(&format!(" | Symbol: {symbol}"));
+                }
+                out.push('\n');
+                if refs.is_empty() {
+                    out.push_str("No documentation references this.\n");
+                }
+                for r in refs {
+                    let id = format!("{}#{}", r.doc_path, r.anchor);
+                    // Without a symbol filter, name what was referenced when it is not the file.
+                    let via = if symbol.is_none() && r.target != *path {
+                        format!(" -> {}", r.target.rsplit("::").next().unwrap_or(&r.target))
+                    } else {
+                        String::new()
+                    };
+                    out.push_str(&format!("- {id} | {}{via}\n", r.heading));
+                }
+            }
+            DocLinksView::DocsToCode { path, sections } => {
+                out.push_str(&format!("Resource: DocLinks | Path: {path}\n"));
+                if sections.is_empty() {
+                    out.push_str("This document references no indexed files or symbols.\n");
+                }
+                for s in sections {
+                    out.push_str(&format!("- #{} | {}\n", s.anchor, s.heading));
+                    for t in &s.targets {
+                        out.push_str(&format!("    {t}\n"));
+                    }
+                }
+            }
+        }
+        truncate_output(out.trim_end(), max_chars)
+    }
+
+    /// `- Term (count) path#anchor, ...`, most frequent first.
+    pub fn format_doc_terms(view: &DocTermsView, max_chars: usize) -> String {
+        let mut out = format!("Resource: DocTerms | Prefix: {}\n", view.prefix);
+        if view.total > view.terms.len() {
+            out.push_str(&format!(
+                "Terms: {} (showing {})\n",
+                view.total,
+                view.terms.len()
+            ));
+        } else {
+            out.push_str(&format!("Terms: {}\n", view.total));
+        }
+        for t in &view.terms {
+            let at: Vec<_> = t.sections.iter().map(|(p, a)| format!("{p}#{a}")).collect();
+            out.push_str(&format!("- {} ({}) {}\n", t.term, t.count, at.join(", ")));
+        }
+        truncate_output(out.trim_end(), max_chars)
+    }
+
+    /// Per file: `METHOD /path (operationId) - summary` lines, then the schema names.
+    pub fn format_api_surface(files: &[ApiFileView], max_chars: usize) -> String {
+        let mut out = format!("Resource: ApiSurface | Files: {}\n", files.len());
+        for f in files {
+            out.push_str(&format!("{}\n", f.path));
+            for op in &f.operations {
+                out.push_str(&format!("  {}", op.name));
+                if let Some(id) = &op.operation_id {
+                    out.push_str(&format!(" ({id})"));
+                }
+                if let Some(summary) = &op.summary {
+                    out.push_str(&format!(" - {summary}"));
+                }
+                out.push('\n');
+            }
+            if !f.schemas.is_empty() {
+                out.push_str(&format!("  schemas: {}\n", f.schemas.join(", ")));
+            }
+        }
+        truncate_output(out.trim_end(), max_chars)
+    }
+
     pub fn format_fetch_result(path: &str, symbol: &str, content: Option<&str>) -> String {
         if let Some(c) = content {
             format!(
@@ -422,5 +606,54 @@ impl ToonFormatter {
                 symbol, path
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_under_budget_is_unchanged() {
+        let text = "line one\nline two\n";
+        assert_eq!(truncate_output(text, 100), text);
+        // Exactly at the budget is still under it.
+        assert_eq!(truncate_output(text, text.chars().count()), text);
+        assert_eq!(truncate_output("", 0), "");
+    }
+
+    #[test]
+    fn test_truncate_over_budget_cuts_on_a_line_and_adds_one_marker() {
+        let text = "alpha\nbeta\ngamma\ndelta\n";
+        let out = truncate_output(text, 13);
+        assert_eq!(
+            out,
+            "alpha\nbeta\n[truncated at 13 characters: raise max_chars or narrow the query to see more]"
+        );
+        assert_eq!(out.matches("[truncated").count(), 1);
+        assert!(!out.contains("gamma"));
+    }
+
+    #[test]
+    fn test_truncate_without_a_line_break_cuts_at_the_budget() {
+        let out = truncate_output("abcdefghij", 4);
+        assert!(out.starts_with("abcd\n[truncated at 4 characters"));
+        // A leading line break is not a cut point: the start is kept, not nothing.
+        let out = truncate_output("\nabcdefghij", 4);
+        assert!(out.starts_with("\nabc\n[truncated"));
+    }
+
+    #[test]
+    fn test_truncate_never_splits_a_multibyte_character() {
+        // Each of these is 2-4 bytes; every budget from 0 to 12 must slice cleanly.
+        let text = "é€🚀é€🚀é€🚀é€🚀";
+        for max in 0..=text.chars().count() + 1 {
+            let out = truncate_output(text, max);
+            let body = out.split("\n[truncated").next().unwrap();
+            assert!(body.chars().count() <= max, "budget {max}: {out}");
+            assert!(text.starts_with(body));
+        }
+        let out = truncate_output(text, 4);
+        assert!(out.starts_with("é€🚀é\n[truncated"));
     }
 }
