@@ -1,0 +1,54 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "end_line": 4,
+      "kind": "struct",
+      "line": 2,
+      "symbol": "AuditLog"
+    },
+    {
+      "end_line": 14,
+      "kind": "impl",
+      "line": 6,
+      "symbol": "AuditLog"
+    },
+    {
+      "end_line": 9,
+      "kind": "function",
+      "line": 7,
+      "symbol": "new"
+    },
+    {
+      "end_line": 13,
+      "kind": "function",
+      "line": 11,
+      "symbol": "append"
+    },
+    {
+      "end_line": 18,
+      "kind": "function",
+      "line": 16,
+      "symbol": "rotate_segments"
+    },
+    {
+      "end_line": 22,
+      "kind": "function",
+      "line": 20,
+      "symbol": "verify_chain"
+    }
+  ],
+  "summary": {
+    "path": "src/audit/log.rs"
+  },
+  "tool": "query",
+  "total": 6,
+  "truncated": false
+}

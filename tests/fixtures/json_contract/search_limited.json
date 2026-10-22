@@ -1,0 +1,32 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "end_line": 3,
+      "kind": "config",
+      "line": 3,
+      "node_type": "symbol",
+      "path": "config/settings.yaml",
+      "symbol": "name"
+    },
+    {
+      "end_line": 4,
+      "kind": "config",
+      "line": 4,
+      "node_type": "symbol",
+      "path": "config/settings.yaml",
+      "symbol": "openapi"
+    }
+  ],
+  "summary": {},
+  "tool": "search",
+  "total": 10,
+  "truncated": true
+}

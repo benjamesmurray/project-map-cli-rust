@@ -1,0 +1,43 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "end_line": 3,
+      "kind": "struct",
+      "line": 1,
+      "node_type": "symbol",
+      "path": "src/audit/retention.rs",
+      "preview": "```rs\n   1: pub struct RetentionPolicy {\n   2:     days: u32,\n```",
+      "symbol": "RetentionPolicy"
+    },
+    {
+      "end_line": 13,
+      "kind": "impl",
+      "line": 5,
+      "node_type": "symbol",
+      "path": "src/audit/retention.rs",
+      "preview": "```rs\n   4: \n   5: impl RetentionPolicy {\n   6:     pub fn new(days: u32) -> Self {\n```",
+      "symbol": "RetentionPolicy"
+    },
+    {
+      "end_line": 11,
+      "kind": "class",
+      "line": 9,
+      "node_type": "symbol",
+      "path": "src/billing/invoice.py",
+      "preview": "```py\n   8: \n   9: class RetentionPolicy:\n  10:     def apply(self):\n```",
+      "symbol": "RetentionPolicy"
+    }
+  ],
+  "summary": {},
+  "tool": "search",
+  "total": 3,
+  "truncated": false
+}

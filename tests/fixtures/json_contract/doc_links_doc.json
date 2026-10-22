@@ -1,0 +1,120 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "anchor": "",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "(before first heading)",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "markdown-links",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Markdown Links",
+      "path": "docs/links.md",
+      "target_path": "docs/guide.md"
+    },
+    {
+      "anchor": "markdown-links",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Markdown Links",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "paths",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Paths",
+      "path": "docs/links.md",
+      "target_path": "src/audit/retention.rs"
+    },
+    {
+      "anchor": "paths",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Paths",
+      "path": "docs/links.md",
+      "target_path": "src/billing/invoice.py"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_code",
+      "form": "symbol",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "append"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_code",
+      "form": "symbol",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "new"
+    },
+    {
+      "anchor": "bare-names",
+      "direction": "to_code",
+      "form": "symbol",
+      "heading": "Bare Names",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "rotate_segments"
+    },
+    {
+      "anchor": "fenced-code",
+      "direction": "to_code",
+      "form": "symbol",
+      "heading": "Fenced Code",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "new"
+    },
+    {
+      "anchor": "fenced-code",
+      "direction": "to_code",
+      "form": "symbol",
+      "heading": "Fenced Code",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "verify_chain"
+    },
+    {
+      "anchor": "fenced-code",
+      "direction": "to_code",
+      "form": "file",
+      "heading": "Fenced Code",
+      "path": "docs/links.md",
+      "target_path": "src/audit/retention.rs"
+    }
+  ],
+  "summary": {
+    "path": "docs/links.md",
+    "total": 12
+  },
+  "tool": "doc_links",
+  "total": 12,
+  "truncated": false
+}

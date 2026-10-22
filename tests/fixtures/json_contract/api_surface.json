@@ -1,0 +1,104 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "item": "operation",
+      "line": 9,
+      "method": "PATCH",
+      "operation_id": "setRetention",
+      "path": "api/billing-api.yml",
+      "route": "/retention",
+      "summary": "Change the retention window"
+    },
+    {
+      "item": "operation",
+      "line": 12,
+      "method": "TRACE",
+      "path": "api/billing-api.yml",
+      "route": "/retention",
+      "summary": "Trace retention"
+    },
+    {
+      "item": "operation",
+      "line": 10,
+      "method": "GET",
+      "operation_id": "listEntries",
+      "path": "api/openapi.yaml",
+      "route": "/entries",
+      "summary": "List audit entries"
+    },
+    {
+      "item": "operation",
+      "line": 13,
+      "method": "POST",
+      "operation_id": "appendEntry",
+      "path": "api/openapi.yaml",
+      "route": "/entries",
+      "summary": "Append an audit entry"
+    },
+    {
+      "item": "operation",
+      "line": 17,
+      "method": "GET",
+      "operation_id": "getEntry",
+      "path": "api/openapi.yaml",
+      "route": "/entries/{id}"
+    },
+    {
+      "item": "schema",
+      "line": 22,
+      "name": "AuditEntry",
+      "path": "api/openapi.yaml"
+    },
+    {
+      "item": "schema",
+      "line": 24,
+      "name": "AuditPage",
+      "path": "api/openapi.yaml"
+    },
+    {
+      "item": "operation",
+      "line": 6,
+      "method": "GET",
+      "operation_id": "listInvoices",
+      "path": "api/swagger.json",
+      "route": "/invoices",
+      "summary": "List invoices"
+    },
+    {
+      "item": "operation",
+      "line": 7,
+      "method": "PUT",
+      "path": "api/swagger.json",
+      "route": "/invoices",
+      "summary": "Replace invoices"
+    },
+    {
+      "item": "operation",
+      "line": 10,
+      "method": "DELETE",
+      "operation_id": "deleteInvoice",
+      "path": "api/swagger.json",
+      "route": "/invoices/{id}"
+    },
+    {
+      "item": "schema",
+      "line": 14,
+      "name": "Invoice",
+      "path": "api/swagger.json"
+    }
+  ],
+  "summary": {
+    "total": 11
+  },
+  "tool": "api_surface",
+  "total": 11,
+  "truncated": false
+}

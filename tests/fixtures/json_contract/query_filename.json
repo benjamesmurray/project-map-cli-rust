@@ -1,0 +1,19 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "path": "src/audit/log.rs"
+    }
+  ],
+  "summary": {},
+  "tool": "query",
+  "total": 1,
+  "truncated": false
+}

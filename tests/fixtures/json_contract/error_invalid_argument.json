@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "error": {
+    "code": "invalid_argument",
+    "message": "Error: Provide a package name, e.g. stripe or @sentry/*"
+  },
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "tool": "imports"
+}

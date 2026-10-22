@@ -290,6 +290,18 @@ impl QueryEngine {
         let mut dist: HashMap<NodeIndex, usize> = HashMap::new();
         dist.insert(start, 0);
         let mut queue = VecDeque::from([(start, 0usize)]);
+        // A file target stands for everything the file defines: `use crate::a::Sym` links
+        // to the symbol, not the file, so the walk also starts from each of its symbols.
+        if matched == BlastMatch::File {
+            let file_path = self.graph.graph[start].path.clone();
+            for idx in self.graph.graph.node_indices() {
+                let node = &self.graph.graph[idx];
+                if idx != start && node.path == file_path && !node.node_type.is_doc() {
+                    dist.insert(idx, 0);
+                    queue.push_back((idx, 0));
+                }
+            }
+        }
         while let Some((current, d)) = queue.pop_front() {
             if dist.get(&current).is_some_and(|&best| best < d) {
                 continue;

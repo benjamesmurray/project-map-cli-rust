@@ -1,0 +1,90 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "count": 4,
+      "sections": [
+        {
+          "anchor": "context",
+          "path": "docs/adr/004-immutable-audit-log.md"
+        },
+        {
+          "anchor": "decision",
+          "path": "docs/adr/005-retention.md"
+        },
+        {
+          "anchor": "operator-guide",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "usage",
+          "path": "docs/guide.md"
+        }
+      ],
+      "term": "ledger"
+    },
+    {
+      "count": 3,
+      "sections": [
+        {
+          "anchor": "operator-guide",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "step-2-configure-auditlog-fast-",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "fenced-code",
+          "path": "docs/links.md"
+        }
+      ],
+      "term": "Audit Service"
+    },
+    {
+      "count": 3,
+      "sections": [
+        {
+          "anchor": "",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "operator-guide",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "fenced-code",
+          "path": "docs/links.md"
+        }
+      ],
+      "term": "Casting Director"
+    },
+    {
+      "count": 2,
+      "sections": [
+        {
+          "anchor": "usage",
+          "path": "docs/guide.md"
+        },
+        {
+          "anchor": "deep-detail",
+          "path": "docs/guide.md"
+        }
+      ],
+      "term": "Compliance Officer"
+    }
+  ],
+  "summary": {
+    "path_prefix": "."
+  },
+  "tool": "doc_terms",
+  "total": 4,
+  "truncated": false
+}

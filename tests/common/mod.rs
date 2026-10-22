@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 pub const IMPORTS_FIXTURE: &str = "tests/fixtures/imports";
 
@@ -75,4 +76,97 @@ pub fn write_large_js(root: &Path) -> &'static str {
     }
     std::fs::write(root.join(rel), src).unwrap();
     rel
+}
+
+/// Builds an index of `root` (absolute) under `base` and loads an engine over it.
+pub fn build_engine(
+    root: &Path,
+    base: &Path,
+) -> project_map_cli_rust::core::query_engine::QueryEngine {
+    use project_map_cli_rust::core::orchestrator::Orchestrator;
+    let root = root.canonicalize().unwrap();
+    let mut orch = Orchestrator::new();
+    orch.build_index(&root, &base.join("out")).unwrap();
+    let index = base.join("index.json");
+    orch.save_index(&index).unwrap();
+    project_map_cli_rust::core::query_engine::QueryEngine::load(&index).unwrap()
+}
+
+/// A fixture copied to `<tempdir>/<name>` and indexed. Keep the `TempDir` alive.
+pub fn engine_for_fixture(
+    fixture: &str,
+    name: &str,
+) -> (
+    tempfile::TempDir,
+    project_map_cli_rust::core::query_engine::QueryEngine,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = copy_fixture(fixture, &dir.path().join(name));
+    let engine = build_engine(&root, dir.path());
+    (dir, engine)
+}
+
+/// A stand-in for the MCP runtime handlers receive; the tools never touch it.
+pub struct DummyRuntime;
+#[async_trait::async_trait]
+impl rust_mcp_sdk::McpServer for DummyRuntime {
+    async fn start(self: Arc<Self>) -> rust_mcp_sdk::error::SdkResult<()> {
+        todo!()
+    }
+    async fn set_client_details(
+        &self,
+        _: rust_mcp_sdk::schema::InitializeRequestParams,
+    ) -> rust_mcp_sdk::error::SdkResult<()> {
+        todo!()
+    }
+    fn server_info(&self) -> &rust_mcp_sdk::schema::InitializeResult {
+        todo!()
+    }
+    fn client_info(&self) -> Option<rust_mcp_sdk::schema::InitializeRequestParams> {
+        todo!()
+    }
+    async fn auth_info<'a>(
+        &'a self,
+    ) -> tokio::sync::RwLockReadGuard<'a, Option<rust_mcp_sdk::auth::AuthInfo>> {
+        todo!()
+    }
+    async fn auth_info_cloned(&self) -> Option<rust_mcp_sdk::auth::AuthInfo> {
+        todo!()
+    }
+    async fn update_auth_info(&self, _: Option<rust_mcp_sdk::auth::AuthInfo>) {
+        todo!()
+    }
+    async fn wait_for_initialization(&self) {
+        todo!()
+    }
+    fn task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ServerTaskStore>> {
+        todo!()
+    }
+    fn client_task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ClientTaskStore>> {
+        todo!()
+    }
+    async fn stderr_message(&self, _: String) -> rust_mcp_sdk::error::SdkResult<()> {
+        todo!()
+    }
+    fn session_id(&self) -> Option<String> {
+        todo!()
+    }
+    async fn send(
+        &self,
+        _: rust_mcp_sdk::schema::schema_utils::MessageFromServer,
+        _: Option<rust_mcp_sdk::schema::RequestId>,
+        _: Option<std::time::Duration>,
+    ) -> rust_mcp_sdk::error::SdkResult<Option<rust_mcp_sdk::schema::schema_utils::ClientMessage>>
+    {
+        todo!()
+    }
+    async fn send_batch(
+        &self,
+        _: Vec<rust_mcp_sdk::schema::schema_utils::ServerMessage>,
+        _: Option<std::time::Duration>,
+    ) -> rust_mcp_sdk::error::SdkResult<
+        Option<Vec<rust_mcp_sdk::schema::schema_utils::ClientMessage>>,
+    > {
+        todo!()
+    }
 }

@@ -164,6 +164,25 @@ fn a_symbol_not_in_the_file_falls_back_to_the_file() {
 }
 
 #[test]
+fn a_file_target_is_seeded_with_the_symbols_it_defines() {
+    let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
+    // `use crate::a::b::Sym` links to the symbol, not the file. A file-level target
+    // (no such symbol in the file) still finds those importers, at depth 1.
+    let sym = engine.blast_result("rust_crate/src/a/b.rs", "Sym", None);
+    let file = engine.blast_result("rust_crate/src/a/b.rs", "no_such_symbol", None);
+    assert_eq!(file.matched, BlastMatch::File);
+    assert_eq!(file.target_symbol, None);
+    for (path, depth) in depths(&sym) {
+        assert!(
+            depths(&file).contains(&(path, depth)),
+            "{path} missing from the file-level radius"
+        );
+    }
+    assert!(file.direct >= sym.direct);
+    assert!(file.items.iter().all(|i| i.path != "rust_crate/src/a/b.rs"));
+}
+
+#[test]
 fn rust_crate_importers_appear_through_use_crate() {
     let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
     let sym = engine.blast_result("rust_crate/src/a/b.rs", "Sym", None);

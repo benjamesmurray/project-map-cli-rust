@@ -1,0 +1,22 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "anchor": "usage",
+    "end_line": 9,
+    "heading": "Usage",
+    "line": 7,
+    "path": "docs/guide.md",
+    "text": "## Usage\n\nThe Compliance Officer reviews every **ledger** export."
+  },
+  "tool": "doc_section",
+  "total": 1,
+  "truncated": false
+}

@@ -1,0 +1,25 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "direct": 0,
+    "files_affected": 0,
+    "languages": [],
+    "matched": "symbol",
+    "target_line": 2,
+    "target_path": "src/audit/log.rs",
+    "target_symbol": "AuditLog",
+    "total": 0,
+    "transitive": 0
+  },
+  "tool": "blast_radius",
+  "total": 0,
+  "truncated": false
+}

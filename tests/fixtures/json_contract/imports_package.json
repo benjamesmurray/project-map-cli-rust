@@ -1,0 +1,47 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "language": "typescript",
+      "line": 2,
+      "module": "stripe",
+      "package": "stripe",
+      "path": "js/app.js",
+      "resolved": false,
+      "text": "import Stripe from \"stripe\";"
+    },
+    {
+      "language": "typescript",
+      "line": 1,
+      "module": "stripe",
+      "package": "stripe",
+      "path": "js/legacy.cjs",
+      "resolved": false,
+      "text": "const stripe = require(\"stripe\");"
+    },
+    {
+      "language": "typescript",
+      "line": 4,
+      "module": "stripe",
+      "package": "stripe",
+      "path": "ts/client.ts",
+      "resolved": false,
+      "text": "const stripe = require(\"stripe\");"
+    }
+  ],
+  "summary": {
+    "files": 3,
+    "imports": 3,
+    "query": "stripe"
+  },
+  "tool": "imports",
+  "total": 3,
+  "truncated": false
+}

@@ -6,69 +6,8 @@ use rust_mcp_sdk::schema::{CallToolRequestParams, ReadResourceContent, ReadResou
 use std::path::Path;
 use std::sync::Arc;
 
-struct DummyRuntime;
-#[async_trait::async_trait]
-impl rust_mcp_sdk::McpServer for DummyRuntime {
-    async fn start(self: Arc<Self>) -> rust_mcp_sdk::error::SdkResult<()> {
-        todo!()
-    }
-    async fn set_client_details(
-        &self,
-        _: rust_mcp_sdk::schema::InitializeRequestParams,
-    ) -> rust_mcp_sdk::error::SdkResult<()> {
-        todo!()
-    }
-    fn server_info(&self) -> &rust_mcp_sdk::schema::InitializeResult {
-        todo!()
-    }
-    fn client_info(&self) -> Option<rust_mcp_sdk::schema::InitializeRequestParams> {
-        todo!()
-    }
-    async fn auth_info<'a>(
-        &'a self,
-    ) -> tokio::sync::RwLockReadGuard<'a, Option<rust_mcp_sdk::auth::AuthInfo>> {
-        todo!()
-    }
-    async fn auth_info_cloned(&self) -> Option<rust_mcp_sdk::auth::AuthInfo> {
-        todo!()
-    }
-    async fn update_auth_info(&self, _: Option<rust_mcp_sdk::auth::AuthInfo>) {
-        todo!()
-    }
-    async fn wait_for_initialization(&self) {
-        todo!()
-    }
-    fn task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ServerTaskStore>> {
-        todo!()
-    }
-    fn client_task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ClientTaskStore>> {
-        todo!()
-    }
-    async fn stderr_message(&self, _: String) -> rust_mcp_sdk::error::SdkResult<()> {
-        todo!()
-    }
-    fn session_id(&self) -> Option<String> {
-        todo!()
-    }
-    async fn send(
-        &self,
-        _: rust_mcp_sdk::schema::schema_utils::MessageFromServer,
-        _: Option<rust_mcp_sdk::schema::RequestId>,
-        _: Option<std::time::Duration>,
-    ) -> rust_mcp_sdk::error::SdkResult<Option<rust_mcp_sdk::schema::schema_utils::ClientMessage>>
-    {
-        todo!()
-    }
-    async fn send_batch(
-        &self,
-        _: Vec<rust_mcp_sdk::schema::schema_utils::ServerMessage>,
-        _: Option<std::time::Duration>,
-    ) -> rust_mcp_sdk::error::SdkResult<
-        Option<Vec<rust_mcp_sdk::schema::schema_utils::ClientMessage>>,
-    > {
-        todo!()
-    }
-}
+mod common;
+use common::DummyRuntime;
 
 fn create_test_handler(test_name: &str) -> McpServerHandler {
     let root = Path::new("tests/fixtures/python");
@@ -111,7 +50,9 @@ async fn test_mcp_tool_list_names() {
             "doc_section",
             "doc_links",
             "doc_terms",
-            "api_surface"
+            "api_surface",
+            "modules",
+            "imports"
         ]
     );
 }
@@ -448,7 +389,7 @@ async fn test_mcp_doc_tools_without_an_index() {
 }
 
 /// Use-case phrase each tool description must contain (Verification 6).
-const USE_CASE_PHRASES: [(&str, &str); 13] = [
+const USE_CASE_PHRASES: [(&str, &str); 15] = [
     ("status", "before grepping"),
     ("query", "outline"),
     ("blast_radius", "grep cannot follow imports"),
@@ -462,6 +403,8 @@ const USE_CASE_PHRASES: [(&str, &str); 13] = [
     ("doc_links", "documentation that mentions"),
     ("doc_terms", "domain vocabulary"),
     ("api_surface", "OpenAPI"),
+    ("modules", "largest"),
+    ("imports", "grep cannot tell an import from a mention"),
 ];
 
 #[tokio::test]
@@ -471,7 +414,7 @@ async fn test_mcp_every_tool_description_names_its_use_case() {
         .handle_list_tools_request(None, Arc::new(DummyRuntime))
         .await
         .unwrap();
-    assert_eq!(result.tools.len(), 13);
+    assert_eq!(result.tools.len(), 15);
     for (name, phrase) in USE_CASE_PHRASES {
         let tool = result.tools.iter().find(|t| t.name == name).unwrap();
         let description = tool.description.as_deref().unwrap_or_default();
@@ -502,13 +445,24 @@ async fn test_mcp_existing_tool_schemas_are_unchanged() {
     .unwrap();
     let snapshot = snapshot.as_object().unwrap();
     assert_eq!(snapshot.len(), 7);
+    // 0.4.0 adds optional parameters only: every 0.3.0 property keeps its schema and
+    // every 0.3.0 required field stays required.
+    const NEW_OPTIONAL: [&str; 3] = ["format", "limit", "max_depth"];
     for (name, schema) in snapshot {
         let tool = result.tools.iter().find(|t| &t.name == name).unwrap();
-        assert_eq!(
-            &serde_json::to_value(&tool.input_schema).unwrap(),
-            schema,
-            "{name}"
-        );
+        let now = serde_json::to_value(&tool.input_schema).unwrap();
+        let old_props = schema["properties"].as_object().unwrap();
+        let new_props = now["properties"].as_object().unwrap();
+        for (prop, def) in old_props {
+            assert_eq!(new_props.get(prop), Some(def), "{name}.{prop}");
+        }
+        for prop in new_props.keys().filter(|p| !old_props.contains_key(*p)) {
+            assert!(
+                NEW_OPTIONAL.contains(&prop.as_str()),
+                "{name}.{prop} is new"
+            );
+        }
+        assert_eq!(schema.get("required"), now.get("required"), "{name}");
     }
 }
 

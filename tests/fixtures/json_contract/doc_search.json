@@ -1,0 +1,87 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "anchor": "adr-004-audit-logs-are-immutable",
+      "heading": "ADR-004: Audit logs are immutable",
+      "level": 1,
+      "line": 12,
+      "path": "docs/adr/004-immutable-audit-log.md",
+      "score": 28,
+      "snippet": []
+    },
+    {
+      "anchor": "step-2-configure-auditlog-fast-",
+      "heading": "Step 2: Configure AuditLog (fast!) 🚀",
+      "level": 2,
+      "line": 29,
+      "path": "docs/guide.md",
+      "score": 16,
+      "snippet": [
+        "See the [Audit Service](../src/audit/log.rs) source. A Release Manager appears only once.",
+        "A Very Long Capitalised Phrase Goes Here once, and A Very Long Capitalised Phrase Goes Here twice."
+      ]
+    },
+    {
+      "anchor": "markdown-links",
+      "heading": "Markdown Links",
+      "level": 2,
+      "line": 5,
+      "path": "docs/links.md",
+      "score": 7,
+      "snippet": [
+        "- Relative link with fragment: [audit log](../src/audit/log.rs#L11)",
+        "- Relative link to a directory-relative doc: [guide](guide.md#usage)"
+      ]
+    },
+    {
+      "anchor": "decision",
+      "heading": "Decision",
+      "level": 2,
+      "line": 18,
+      "path": "docs/adr/004-immutable-audit-log.md",
+      "score": 4,
+      "snippet": [
+        "`AuditLog::append` is the only writer, implemented in `src/audit/log.rs::append`.",
+        "Rotation uses `rotate_segments`."
+      ]
+    },
+    {
+      "anchor": "qualified-symbols",
+      "heading": "Qualified Symbols",
+      "level": 3,
+      "line": 22,
+      "path": "docs/links.md",
+      "score": 4,
+      "snippet": [
+        "Path-qualified `src/audit/log.rs::append` and line-qualified `src/audit/log.rs:12`.",
+        "Line outside any symbol `src/audit/log.rs:1`."
+      ]
+    },
+    {
+      "anchor": "fenced-code",
+      "heading": "Fenced Code",
+      "level": 2,
+      "line": 36,
+      "path": "docs/links.md",
+      "score": 4,
+      "snippet": [
+        "let mut log = AuditLog::new();",
+        "verify_chain(&log);"
+      ]
+    }
+  ],
+  "summary": {
+    "query": "audit log"
+  },
+  "tool": "doc_search",
+  "total": 6,
+  "truncated": false
+}

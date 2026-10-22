@@ -69,6 +69,9 @@ fn calls(fixture: &str) -> Vec<Vec<&'static str>> {
             vec!["doc", "links", "docs/links.md"],
             vec!["doc", "terms"],
             vec!["api"],
+            vec!["modules", "--max-depth", "3"],
+            vec!["modules", "src", "--max-depth", "1"],
+            vec!["imports", "serde"],
         ]);
     } else {
         all.extend([
@@ -86,9 +89,60 @@ fn calls(fixture: &str) -> Vec<Vec<&'static str>> {
             vec!["impact", "-f", "diamond.a"],
             vec!["fetch", "-p", "rust_crate/src/errors.rs", "-s", "from"],
             vec!["fetch", "-p", "rust_crate/src/errors.rs", "-s", "E"],
+            vec!["modules", "--max-depth", "3"],
+            vec!["modules", "rust_crate", "--max-depth", "1"],
+            vec!["imports", "@sentry/*"],
+            vec!["imports", "stripe"],
+            vec!["imports", "serde_json"],
+            vec!["imports", "sentry_sdk"],
         ]);
     }
     all
+}
+
+/// Every call, in TOON and then in JSON.
+fn calls_in_both_formats(fixture: &str) -> Vec<Vec<&'static str>> {
+    calls(fixture)
+        .into_iter()
+        .flat_map(|toon| {
+            let mut json = toon.clone();
+            json.extend(["--format", "json"]);
+            [toon, json]
+        })
+        .collect()
+}
+
+/// `status` JSON minus the fields that name the directory, the build or the Git state.
+fn status_json_without_build_fields(text: &str) -> String {
+    let mut v: Value = serde_json::from_str(text).unwrap();
+    for key in [
+        "root",
+        "built_at",
+        "commit",
+        "dirty",
+        "branch",
+        "head_now",
+        "dirty_now",
+        "at_head",
+        "git_error",
+    ] {
+        v["summary"].as_object_mut().unwrap().remove(key);
+    }
+    for key in ["commit", "dirty"] {
+        v["index"].as_object_mut().unwrap().remove(key);
+    }
+    v.to_string()
+}
+
+/// The output with the build fields of `status` removed, whatever the format.
+fn normalised(args: &[&str], text: &str) -> String {
+    if args[0] != "status" {
+        text.to_string()
+    } else if args.contains(&"json") {
+        status_json_without_build_fields(text)
+    } else {
+        status_without_build_fields(text)
+    }
 }
 
 /// Copies `fixture` to `<temp>/<name>` and builds it there, twice.
@@ -103,36 +157,26 @@ fn built_in(fixture: &str, name: &str) -> (TempDir, std::path::PathBuf) {
 fn assert_tool_output_is_stable(fixture: &str) {
     let (_t1, one) = built_in(fixture, "alpha");
     let (_t2, two) = built_in(fixture, "omega-with-a-much-longer-name");
-    for args in calls(fixture) {
-        let first = cli(&one, &args);
-        let second = cli(&two, &args);
-        let (first, second) = if args[0] == "status" {
-            (
-                status_without_build_fields(&first),
-                status_without_build_fields(&second),
-            )
-        } else {
-            (first, second)
-        };
+    for args in calls_in_both_formats(fixture) {
+        let first = normalised(&args, &cli(&one, &args));
+        let second = normalised(&args, &cli(&two, &args));
         assert_eq!(
             first, second,
             "{args:?} differs between the two directories"
         );
     }
     // A second build of the same directory changes nothing.
-    let before: Vec<String> = calls(fixture).iter().map(|a| cli(&one, a)).collect();
+    let before: Vec<String> = calls_in_both_formats(fixture)
+        .iter()
+        .map(|a| normalised(a, &cli(&one, a)))
+        .collect();
     cli(&one, &["build", "-r", ".", "-o", ".project-map"]);
-    for (args, old) in calls(fixture).iter().zip(before) {
-        let again = cli(&one, args);
-        if args[0] == "status" {
-            assert_eq!(
-                status_without_build_fields(&old),
-                status_without_build_fields(&again),
-                "{args:?}"
-            );
-        } else {
-            assert_eq!(old, again, "{args:?} differs after a rebuild");
-        }
+    for (args, old) in calls_in_both_formats(fixture).iter().zip(before) {
+        assert_eq!(
+            old,
+            normalised(args, &cli(&one, args)),
+            "{args:?} differs after a rebuild"
+        );
     }
 }
 

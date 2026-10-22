@@ -1,0 +1,34 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "end_line": 4,
+      "kind": "struct",
+      "line": 2,
+      "node_type": "symbol",
+      "path": "src/audit/log.rs",
+      "preview": "```rs\n   1: /// Append-only audit log.\n   2: pub struct AuditLog {\n   3:     entries: Vec<String>,\n   4: }\n```",
+      "symbol": "AuditLog"
+    },
+    {
+      "end_line": 13,
+      "kind": "function",
+      "line": 11,
+      "node_type": "symbol",
+      "path": "src/audit/log.rs",
+      "preview": "```rs\n   9:     }\n  10: \n  11:     pub fn append(&mut self, entry: String) {\n  12:         self.entries.push(entry);\n  13:     }\n```",
+      "symbol": "AuditLog.append"
+    }
+  ],
+  "summary": {},
+  "tool": "query",
+  "total": 2,
+  "truncated": false
+}

@@ -5,7 +5,7 @@ use crate::core::graph::{
     EntityMatch, NodeData, NodeType, OLD_SCHEMA_MESSAGE, STALE_INDEX_MESSAGE,
 };
 use crate::core::query_engine::QueryEngine;
-use crate::core::results::BlastRadiusResult;
+use crate::core::results::{BlastRadiusResult, ImportsResult, ModulesResult};
 use crate::core::typed_queries::GitView;
 use std::collections::HashMap;
 use std::path::Path;
@@ -232,7 +232,7 @@ impl ToonFormatter {
             }
 
             output.push_str("Summary:\n");
-            output.push_str(&format!("- Total Impacted Nodes: {}\n", results.len()));
+            output.push_str(&format!("- Total Impacted Nodes: {}\n", radius.total));
             output.push_str(&format!(
                 "- Direct Dependents: {} | Transitive: {}\n",
                 radius.direct, radius.transitive
@@ -262,10 +262,10 @@ impl ToonFormatter {
                 output.push_str(&format!("- {} (ln: {}) -> {}\n", r.path, r.line, r.name));
             }
 
-            if results.len() > 10 {
+            if radius.total > 10 {
                 output.push_str(&format!(
                     "... and {} more nodes omitted for brevity.\n",
-                    results.len() - 10
+                    radius.total - 10
                 ));
             }
 
@@ -487,6 +487,47 @@ impl ToonFormatter {
         }
 
         output
+    }
+
+    /// `modules`: one line per directory, counts recursive.
+    pub fn format_modules(result: &ModulesResult, max_chars: usize) -> String {
+        let mut out = format!(
+            "Resource: Modules | Prefix: {} | Max Depth: {}\nDirectories: {}\n",
+            result.path_prefix, result.max_depth, result.total
+        );
+        for m in &result.items {
+            out.push_str(&format!(
+                "- {} | files: {} | code: {} | symbols: {} | docs: {} | sections: {}\n",
+                m.path, m.files, m.code_files, m.symbols, m.doc_files, m.doc_sections
+            ));
+        }
+        truncate_output(out.trim_end(), max_chars)
+    }
+
+    /// `imports`: the import lines of a package, `path:line | text`.
+    pub fn format_imports(result: &ImportsResult, max_chars: usize) -> String {
+        let prefix_query = result.query.ends_with("/*") || result.query.ends_with(".*");
+        let mut out = format!("Resource: Imports | Package: {}\n", result.query);
+        out.push_str(&format!(
+            "Files: {} | Imports: {}\n",
+            result.files, result.imports
+        ));
+        for i in &result.items {
+            out.push_str(&format!("- {}:{} | {}", i.path, i.line, i.text));
+            if prefix_query {
+                if let Some(package) = &i.package {
+                    out.push_str(&format!(" [{package}]"));
+                }
+            }
+            out.push('\n');
+        }
+        if result.truncated {
+            out.push_str(&format!(
+                "... and {} more imports.\n",
+                result.imports - result.items.len()
+            ));
+        }
+        truncate_output(out.trim_end(), max_chars)
     }
 
     /// Ranked doc sections: `- path#anchor | Heading` with up to two snippet lines.

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::io::IsTerminal;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,24 +17,30 @@ use rust_mcp_sdk::{
 };
 use tracing_subscriber::fmt;
 
+use crate::core::json_out::to_json;
 use crate::core::orchestrator::rebuild_and_publish;
 use crate::core::query_engine::QueryEngine;
-use crate::core::results::QueryError;
-use crate::core::toon::{ToonFormatter, DEFAULT_MAX_CHARS};
-use crate::core::utils::{get_active_features, normalize_rel_path, render_tree};
+use crate::core::results::{InitResult, InitStatus};
+use crate::core::tools::{index_info, run, Format, ToolCall, ToolEnv, ToolOutput};
+use crate::core::utils::render_tree;
 use crate::error::Result;
-
-const DEFAULT_DOC_LIMIT: usize = 10;
-const DEFAULT_TERMS_LIMIT: usize = 30;
 
 // --- Tool Definitions ---
 
+// Every tool takes `format`. It is the same sentence everywhere, because the
+// descriptions of deferred tools are searched by Claude Code.
+
 #[mcp_tool(
     name = "status",
-    description = "Orient in the workspace before grepping: index health, the project tree, active spec features and doc counts. Start here to see what the map covers."
+    description = "Orient in the workspace before grepping: index health, the indexed Git commit and whether it is still HEAD, the project tree, active spec features and doc counts. Start here to see what the map covers."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct StatusTool {}
+pub struct StatusTool {
+    /// Depth of the project tree (defaults to 3)
+    pub max_depth: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
+}
 
 #[mcp_tool(
     name = "query",
@@ -49,6 +56,10 @@ pub struct QueryTool {
     pub filename: Option<String>,
     /// Number of context lines for snippet preview (defaults to 3)
     pub preview: Option<u32>,
+    /// Maximum number of matches to list (JSON defaults to 50)
+    pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -61,6 +72,10 @@ pub struct BlastRadiusTool {
     pub path: String,
     /// Symbol name to check
     pub symbol: String,
+    /// Maximum number of dependents to list; the counts cover all (JSON defaults to 200)
+    pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -71,6 +86,10 @@ pub struct BlastRadiusTool {
 pub struct PlanTool {
     /// Symbol name to analyze
     pub symbol: String,
+    /// Maximum number of nodes to list (JSON defaults to 200)
+    pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -83,6 +102,10 @@ pub struct SearchTool {
     pub query: String,
     /// Number of context lines for snippet preview (defaults to 3)
     pub preview: Option<u32>,
+    /// Maximum number of matches to list (JSON defaults to 50)
+    pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -95,6 +118,8 @@ pub struct FetchSymbolTool {
     pub path: String,
     /// Symbol name
     pub symbol: String,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -102,7 +127,10 @@ pub struct FetchSymbolTool {
     description = "Rebuild the map index after significant code changes (new files, large refactors, branch switches) so every other tool answers from current code and docs."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
-pub struct InitTool {}
+pub struct InitTool {
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
+}
 
 #[mcp_tool(
     name = "doc_search",
@@ -114,6 +142,8 @@ pub struct DocSearchTool {
     pub query: String,
     /// Maximum number of sections to return (defaults to 10)
     pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -124,6 +154,10 @@ pub struct DocSearchTool {
 pub struct DocOutlineTool {
     /// Markdown file path
     pub path: String,
+    /// Keep headings down to this depth (1 = top level only); omit for all
+    pub max_depth: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -136,8 +170,10 @@ pub struct DocSectionTool {
     pub path: String,
     /// Section anchor, as listed by doc_outline or doc_search
     pub anchor: String,
-    /// Maximum characters of section text to return (defaults to 4000)
+    /// Maximum characters of section text to return (defaults to 4000; JSON returns the full text unless given)
     pub max_chars: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -150,6 +186,8 @@ pub struct DocLinksTool {
     pub path: String,
     /// Restrict a code file's links to one symbol
     pub symbol: Option<String>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -162,6 +200,8 @@ pub struct DocTermsTool {
     pub path_prefix: Option<String>,
     /// Maximum number of terms to return (defaults to 30)
     pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
 }
 
 #[mcp_tool(
@@ -172,6 +212,80 @@ pub struct DocTermsTool {
 pub struct ApiSurfaceTool {
     /// Restrict the listing to one spec file
     pub path: Option<String>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
+}
+
+#[mcp_tool(
+    name = "modules",
+    description = "Which areas of the codebase are largest, by files, symbols and doc sections: recursive counts per directory, instead of listing the tree and counting by hand."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct ModulesTool {
+    /// Only directories under this path prefix (defaults to the whole repository)
+    pub path_prefix: Option<String>,
+    /// Directory levels below the prefix to list (defaults to 2)
+    pub max_depth: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
+}
+
+#[mcp_tool(
+    name = "imports",
+    description = "Which files use an external package, with the import line (grep cannot tell an import from a mention). Give a package name such as stripe or sentry_sdk, or a prefix such as @sentry/*."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct ImportsTool {
+    /// Package name, exact (stripe, serde_json) or by prefix with a trailing /* or .* (@sentry/*)
+    pub package: String,
+    /// Only files under this path prefix
+    pub path_prefix: Option<String>,
+    /// Maximum number of import lines to list; the counts cover all (defaults to 50)
+    pub limit: Option<u32>,
+    /// Output format: "toon" (default, compact text) or "json" (for programs, costs more tokens)
+    pub format: Option<String>,
+}
+
+/// What the server tells the model at session start, even when the client defers the
+/// tools (Claude Code shows only tool names and these instructions until a tool is
+/// searched for). Claude Code cuts them at 4,096 characters.
+pub const SERVER_INSTRUCTIONS: &str = "\
+Project Map indexes this repository: code symbols and the imports between files across languages, Markdown documentation (ADRs, specs, READMEs) and OpenAPI files. Use its tools instead of grep or reading whole files for structural questions.
+
+- status: start here; index health, indexed Git commit and whether it is still HEAD, project tree.
+- query, search, fetch_symbol: where a symbol is defined, a file's outline, one definition's source.
+- blast_radius, plan: who depends on a symbol (importers, not callers) and how far a change reaches.
+- imports: which files use an external package, with the import line.
+- modules: which areas are largest, by files, symbols and doc sections.
+- doc_search, doc_outline, doc_section, doc_links, doc_terms, api_surface: documentation and API specs.
+- init: rebuild the index when status says it is missing or stale.
+
+Every tool takes format: \"toon\" (default, compact text) or \"json\" (a stable envelope for programs; costs more tokens). Lists come in a fixed order.";
+
+/// The initialize result: server identity, capabilities and the instructions the model
+/// sees at session start.
+pub fn server_details() -> InitializeResult {
+    InitializeResult {
+        protocol_version: ProtocolVersion::V2025_11_25.into(),
+        capabilities: ServerCapabilities {
+            tools: Some(ServerCapabilitiesTools { list_changed: None }),
+            resources: Some(rust_mcp_sdk::schema::ServerCapabilitiesResources {
+                subscribe: None,
+                list_changed: None,
+            }),
+            ..Default::default()
+        },
+        server_info: Implementation {
+            name: "project-map-cli-rust".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            title: Some("Project Map CLI".to_string()),
+            description: None,
+            icons: vec![],
+            website_url: None,
+        },
+        instructions: Some(SERVER_INSTRUCTIONS.to_string()),
+        meta: None,
+    }
 }
 
 // --- Server Implementation ---
@@ -223,29 +337,13 @@ impl McpServer {
     }
 
     pub async fn run(&self) -> Result<()> {
-        let _ = fmt().with_writer(std::io::stderr).try_init();
+        // Colour only for a person at a terminal: a job's log collector gets plain text.
+        let _ = fmt()
+            .with_writer(std::io::stderr)
+            .with_ansi(std::io::stderr().is_terminal())
+            .try_init();
 
-        let server_info = InitializeResult {
-            protocol_version: ProtocolVersion::V2025_11_25.into(),
-            capabilities: ServerCapabilities {
-                tools: Some(ServerCapabilitiesTools { list_changed: None }),
-                resources: Some(rust_mcp_sdk::schema::ServerCapabilitiesResources {
-                    subscribe: None,
-                    list_changed: None,
-                }),
-                ..Default::default()
-            },
-            server_info: Implementation {
-                name: "project-map-cli-rust".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("Project Map CLI".to_string()),
-                description: None,
-                icons: vec![],
-                website_url: None,
-            },
-            instructions: None,
-            meta: None,
-        };
+        let server_info = server_details();
 
         let transport = StdioTransport::new(TransportOptions::default())
             .map_err(|e| crate::error::AppError::Generic(format!("Transport error: {}", e)))?;
@@ -300,14 +398,6 @@ impl McpServerHandler {
     ) -> Self {
         Self { root, out, engine }
     }
-
-    /// Runs `f` against the loaded engine, or reports that no index is loaded.
-    fn with_engine(&self, f: impl FnOnce(&QueryEngine) -> String) -> String {
-        match *self.engine.read().unwrap() {
-            Some(ref engine) => f(engine),
-            None => QueryError::index_missing().message,
-        }
-    }
 }
 
 #[async_trait]
@@ -341,6 +431,8 @@ impl ServerHandler for McpServerHandler {
                 DocLinksTool::tool(),
                 DocTermsTool::tool(),
                 ApiSurfaceTool::tool(),
+                ModulesTool::tool(),
+                ImportsTool::tool(),
             ],
             next_cursor: None,
             meta: None,
@@ -453,185 +545,180 @@ impl ServerHandler for McpServerHandler {
         _runtime: Arc<dyn SdkMcpServer>,
     ) -> std::result::Result<CallToolResult, CallToolError> {
         let arguments = serde_json::Value::Object(params.arguments.unwrap_or_default());
-        let text = match params.name.as_str() {
-            "status" => {
-                let latest_path = self.out.join("latest").join(".project-map.json");
-                let engine_guard = self.engine.read().unwrap();
-                let (tree, active_features) = if let Some(ref engine) = *engine_guard {
-                    let paths = engine.get_all_file_paths();
-                    let tree = render_tree(&paths, 3);
-                    let active = get_active_features(&self.root);
-                    (Some(tree), active)
-                } else {
-                    (None, Vec::new())
-                };
+        let env = ToolEnv {
+            root: &self.root,
+            out: &self.out,
+        };
+        let engine_guard = self.engine.read().unwrap();
+        let engine = engine_guard.as_ref();
+        let usize_of = |v: Option<u32>| v.map(|n| n as usize);
 
-                ToonFormatter::format_full_status(
-                    engine_guard.as_ref(),
-                    Some(&self.root),
-                    Some(&self.out),
-                    latest_path.to_str(),
-                    tree.as_deref(),
-                    &active_features,
+        macro_rules! args {
+            ($t:ty) => {
+                serde_json::from_value::<$t>(arguments).map_err(|e| CallToolError(Box::new(e)))?
+            };
+        }
+        // Parses `format`, runs the call, and shapes the MCP result.
+        macro_rules! respond {
+            ($format:expr, $call:expr) => {
+                match Format::parse($format.as_deref()) {
+                    Ok(format) => run(engine, env, &$call, format),
+                    Err(e) => ToolOutput::failure(&e),
+                }
+            };
+        }
+
+        let output = match params.name.as_str() {
+            "status" => {
+                let a = args!(StatusTool);
+                respond!(
+                    a.format,
+                    ToolCall::Status {
+                        max_depth: usize_of(a.max_depth)
+                    }
                 )
             }
             "query" => {
-                let args: QueryTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-
-                if let Some(ref engine) = *self.engine.read().unwrap() {
-                    if let Some(q) = args.query {
-                        let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
-                        let matches = engine.find_entities_with_preview(&q, preview_lines);
-                        ToonFormatter::format_entity_matches(&q, &matches)
-                    } else if let Some(p) = args.path {
-                        let norm_p = normalize_rel_path(Path::new("."), &p);
-                        let symbols = engine.get_file_outline(&norm_p);
-                        ToonFormatter::format_file_context(&norm_p, &symbols)
-                    } else if let Some(f) = args.filename {
-                        let matches = engine.find_files(&f);
-                        ToonFormatter::format_file_matches(&f, &matches)
-                    } else {
-                        QueryError::invalid_argument("Error: Provide query, path, or filename")
-                            .message
+                let a = args!(QueryTool);
+                respond!(
+                    a.format,
+                    ToolCall::Query {
+                        query: a.query.as_deref(),
+                        path: a.path.as_deref(),
+                        filename: a.filename.as_deref(),
+                        preview: a.preview.map(|p| p as usize).or(Some(3)),
+                        limit: usize_of(a.limit),
                     }
-                } else {
-                    QueryError::index_missing().message
-                }
+                )
             }
             "blast_radius" => {
-                let args: BlastRadiusTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-
-                if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let norm_path = normalize_rel_path(Path::new("."), &args.path);
-                    let (radius, results) = engine.blast_with_nodes(&norm_path, &args.symbol);
-                    ToonFormatter::format_blast_radius(&norm_path, &args.symbol, &results, &radius)
-                } else {
-                    QueryError::index_missing().message
-                }
+                let a = args!(BlastRadiusTool);
+                respond!(
+                    a.format,
+                    ToolCall::BlastRadius {
+                        path: &a.path,
+                        symbol: &a.symbol,
+                        limit: usize_of(a.limit),
+                    }
+                )
             }
             "plan" => {
-                let args: PlanTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-
-                if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let impact = engine.analyze_impact(&args.symbol);
-                    ToonFormatter::format_impact_analysis(&args.symbol, &impact)
-                } else {
-                    QueryError::index_missing().message
-                }
+                let a = args!(PlanTool);
+                respond!(
+                    a.format,
+                    ToolCall::Plan {
+                        symbol: &a.symbol,
+                        limit: usize_of(a.limit),
+                    }
+                )
             }
             "search" => {
-                let args: SearchTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-
-                if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let preview_lines = args.preview.map(|p| p as usize).or(Some(3));
-                    let matches = engine.find_entities_with_preview(&args.query, preview_lines);
-                    ToonFormatter::format_entity_matches(&args.query, &matches)
-                } else {
-                    QueryError::index_missing().message
-                }
+                let a = args!(SearchTool);
+                respond!(
+                    a.format,
+                    ToolCall::Search {
+                        query: &a.query,
+                        preview: a.preview.map(|p| p as usize).or(Some(3)),
+                        limit: usize_of(a.limit),
+                    }
+                )
             }
             "fetch_symbol" => {
-                let args: FetchSymbolTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-
-                if let Some(ref engine) = *self.engine.read().unwrap() {
-                    let norm_path = normalize_rel_path(Path::new("."), &args.path);
-                    if let Some(node) = engine.find_symbol_in_path(&norm_path, &args.symbol) {
-                        if let Ok(content) = std::fs::read_to_string(&node.path) {
-                            let bytes = content.as_bytes();
-                            let content_str = if node.start_byte < bytes.len()
-                                && node.end_byte <= bytes.len()
-                                && node.end_byte > node.start_byte
-                            {
-                                String::from_utf8_lossy(&bytes[node.start_byte..node.end_byte])
-                                    .to_string()
-                            } else if node.line > 0 {
-                                let mut extractor =
-                                    crate::core::query_engine::SnippetExtractor::new();
-                                extractor
-                                    .extract(&node.path, node.line, 5)
-                                    .map(|p| p.formatted)
-                                    .unwrap_or_default()
-                            } else {
-                                String::new()
-                            };
-
-                            if !content_str.is_empty() {
-                                ToonFormatter::format_fetch_result(
-                                    &norm_path,
-                                    &args.symbol,
-                                    Some(&content_str),
-                                )
-                            } else {
-                                "Error: Byte range or line out of bounds".to_string()
-                            }
-                        } else {
-                            "Error: Could not read file".to_string()
-                        }
-                    } else {
-                        ToonFormatter::format_fetch_result(&norm_path, &args.symbol, None)
+                let a = args!(FetchSymbolTool);
+                respond!(
+                    a.format,
+                    ToolCall::FetchSymbol {
+                        path: &a.path,
+                        symbol: &a.symbol,
                     }
-                } else {
-                    QueryError::index_missing().message
-                }
+                )
             }
             "doc_search" => {
-                let args: DocSearchTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| {
-                    let limit = args.limit.map_or(DEFAULT_DOC_LIMIT, |l| l as usize);
-                    engine.render_doc_search(&args.query, limit, DEFAULT_MAX_CHARS)
-                })
+                let a = args!(DocSearchTool);
+                respond!(
+                    a.format,
+                    ToolCall::DocSearch {
+                        query: &a.query,
+                        limit: usize_of(a.limit),
+                    }
+                )
             }
             "doc_outline" => {
-                let args: DocOutlineTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| engine.render_doc_outline(&args.path, DEFAULT_MAX_CHARS))
+                let a = args!(DocOutlineTool);
+                respond!(
+                    a.format,
+                    ToolCall::DocOutline {
+                        path: &a.path,
+                        max_depth: usize_of(a.max_depth),
+                    }
+                )
             }
             "doc_section" => {
-                let args: DocSectionTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| {
-                    let max_chars = args.max_chars.map_or(DEFAULT_MAX_CHARS, |m| m as usize);
-                    engine.render_doc_section(&args.path, &args.anchor, max_chars)
-                })
+                let a = args!(DocSectionTool);
+                respond!(
+                    a.format,
+                    ToolCall::DocSection {
+                        path: &a.path,
+                        anchor: &a.anchor,
+                        max_chars: usize_of(a.max_chars),
+                    }
+                )
             }
             "doc_links" => {
-                let args: DocLinksTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| {
-                    engine.render_doc_links(&args.path, args.symbol.as_deref(), DEFAULT_MAX_CHARS)
-                })
+                let a = args!(DocLinksTool);
+                respond!(
+                    a.format,
+                    ToolCall::DocLinks {
+                        path: &a.path,
+                        symbol: a.symbol.as_deref(),
+                    }
+                )
             }
             "doc_terms" => {
-                let args: DocTermsTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| {
-                    let limit = args.limit.map_or(DEFAULT_TERMS_LIMIT, |l| l as usize);
-                    engine.render_doc_terms(args.path_prefix.as_deref(), limit, DEFAULT_MAX_CHARS)
-                })
+                let a = args!(DocTermsTool);
+                respond!(
+                    a.format,
+                    ToolCall::DocTerms {
+                        path_prefix: a.path_prefix.as_deref(),
+                        limit: usize_of(a.limit),
+                    }
+                )
             }
             "api_surface" => {
-                let args: ApiSurfaceTool =
-                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
-                self.with_engine(|engine| {
-                    engine.render_api_surface(args.path.as_deref(), DEFAULT_MAX_CHARS)
-                })
+                let a = args!(ApiSurfaceTool);
+                respond!(
+                    a.format,
+                    ToolCall::ApiSurface {
+                        path: a.path.as_deref()
+                    }
+                )
             }
-            "init" => match rebuild_and_publish(&self.root, &self.out) {
-                Ok(new_engine) => {
-                    *self.engine.write().unwrap() = Some(new_engine);
-                    "Index refreshed successfully.".to_string()
-                }
-                Err(e) => {
-                    format!("Failed to refresh index: {}", e)
-                }
-            },
-
+            "modules" => {
+                let a = args!(ModulesTool);
+                respond!(
+                    a.format,
+                    ToolCall::Modules {
+                        path_prefix: a.path_prefix.as_deref(),
+                        max_depth: usize_of(a.max_depth),
+                    }
+                )
+            }
+            "imports" => {
+                let a = args!(ImportsTool);
+                respond!(
+                    a.format,
+                    ToolCall::Imports {
+                        package: &a.package,
+                        path_prefix: a.path_prefix.as_deref(),
+                        limit: usize_of(a.limit),
+                    }
+                )
+            }
+            "init" => {
+                let a = args!(InitTool);
+                drop(engine_guard);
+                self.init(a.format.as_deref())
+            }
             _ => {
                 return Err(CallToolError(Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -640,6 +727,71 @@ impl ServerHandler for McpServerHandler {
             }
         };
 
-        Ok(CallToolResult::text_content(vec![text.into()]))
+        let mut result = CallToolResult::text_content(vec![output.text.clone().into()]);
+        result.structured_content = output.structured();
+        if output.is_error {
+            result.is_error = Some(true);
+        }
+        Ok(result)
+    }
+}
+
+impl McpServerHandler {
+    /// Rebuilds the index and swaps the engine. The summary carries the new commit and
+    /// dirty flag, so a job needs no second `status` call.
+    fn init(&self, format: Option<&str>) -> ToolOutput {
+        let format = match Format::parse(format) {
+            Ok(f) => f,
+            Err(e) => return ToolOutput::failure(&e),
+        };
+        let (result, is_error) = match rebuild_and_publish(&self.root, &self.out) {
+            Ok(new_engine) => {
+                let meta = new_engine.meta();
+                let result = InitResult {
+                    status: InitStatus::Refreshed,
+                    message: "Index refreshed successfully.".to_string(),
+                    commit: meta.and_then(|m| m.git_commit.clone()),
+                    dirty: meta.and_then(|m| m.git_dirty),
+                };
+                *self.engine.write().unwrap() = Some(new_engine);
+                (result, false)
+            }
+            Err(e) => (
+                InitResult {
+                    status: InitStatus::Failed,
+                    message: format!("Failed to refresh index: {}", e),
+                    commit: None,
+                    dirty: None,
+                },
+                true,
+            ),
+        };
+        match format {
+            Format::Toon => {
+                let mut text = result.message.clone();
+                if let (Some(commit), false) = (&result.commit, is_error) {
+                    let dirty = match result.dirty {
+                        Some(true) => " (dirty)",
+                        Some(false) => " (clean)",
+                        None => "",
+                    };
+                    text.push_str(&format!(" Commit: {}{}", commit, dirty));
+                }
+                ToolOutput {
+                    text,
+                    json: None,
+                    is_error,
+                }
+            }
+            Format::Json => {
+                let engine = self.engine.read().unwrap();
+                let value = to_json("init", &Ok(result), &index_info(engine.as_ref()));
+                ToolOutput {
+                    text: value.to_string(),
+                    json: Some(value),
+                    is_error,
+                }
+            }
+        }
     }
 }

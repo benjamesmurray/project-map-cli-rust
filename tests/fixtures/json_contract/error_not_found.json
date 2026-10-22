@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "error": {
+    "code": "not_found",
+    "message": "Unknown document: docs/nope.md is not an indexed Markdown file. Use `query` with a directory path to list indexed files."
+  },
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "tool": "doc_outline"
+}

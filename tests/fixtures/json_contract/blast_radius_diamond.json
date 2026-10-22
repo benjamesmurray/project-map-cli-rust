@@ -1,0 +1,55 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "depth": 1,
+      "end_line": 0,
+      "kind": "file",
+      "line": 0,
+      "node_type": "file",
+      "path": "diamond/a.ts",
+      "symbol": "diamond.a"
+    },
+    {
+      "depth": 1,
+      "end_line": 0,
+      "kind": "file",
+      "line": 0,
+      "node_type": "file",
+      "path": "diamond/m1.ts",
+      "symbol": "diamond.m1"
+    },
+    {
+      "depth": 2,
+      "end_line": 0,
+      "kind": "file",
+      "line": 0,
+      "node_type": "file",
+      "path": "diamond/m2.ts",
+      "symbol": "diamond.m2"
+    }
+  ],
+  "summary": {
+    "direct": 2,
+    "files_affected": 3,
+    "languages": [
+      "typescript"
+    ],
+    "matched": "symbol",
+    "target_line": 1,
+    "target_path": "diamond/target.ts",
+    "target_symbol": "target",
+    "total": 3,
+    "transitive": 1
+  },
+  "tool": "blast_radius",
+  "total": 3,
+  "truncated": false
+}

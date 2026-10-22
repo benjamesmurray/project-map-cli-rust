@@ -1,0 +1,65 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "language": "typescript",
+      "line": 1,
+      "module": "@sentry/node",
+      "package": "@sentry/node",
+      "path": "js/app.js",
+      "resolved": false,
+      "text": "import * as Sentry from \"@sentry/node\";"
+    },
+    {
+      "language": "typescript",
+      "line": 1,
+      "module": "@sentry/react",
+      "package": "@sentry/react",
+      "path": "js/lazy.mjs",
+      "resolved": false,
+      "text": "export { init } from \"@sentry/react\";"
+    },
+    {
+      "language": "typescript",
+      "line": 2,
+      "module": "@sentry/node/tracing",
+      "package": "@sentry/node",
+      "path": "js/legacy.cjs",
+      "resolved": false,
+      "text": "const tracing = require(\"@sentry/node/tracing\");"
+    },
+    {
+      "language": "typescript",
+      "line": 2,
+      "module": "@sentry/react",
+      "package": "@sentry/react",
+      "path": "js/view.jsx",
+      "resolved": false,
+      "text": "import { ErrorBoundary } from \"@sentry/react\";"
+    },
+    {
+      "language": "typescript",
+      "line": 1,
+      "module": "@sentry/react",
+      "package": "@sentry/react",
+      "path": "ts/client.ts",
+      "resolved": false,
+      "text": "import * as Sentry from \"@sentry/react\";"
+    }
+  ],
+  "summary": {
+    "files": 5,
+    "imports": 5,
+    "query": "@sentry/*"
+  },
+  "tool": "imports",
+  "total": 5,
+  "truncated": false
+}

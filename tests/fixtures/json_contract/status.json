@@ -1,0 +1,114 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "active_features": [],
+    "api_operations": 8,
+    "at_head": null,
+    "branch": null,
+    "built_at": "<built_at>",
+    "commit": null,
+    "dirty": null,
+    "dirty_now": null,
+    "doc_files": 5,
+    "doc_references": 17,
+    "doc_sections": 27,
+    "edges": 77,
+    "files": 13,
+    "head_now": null,
+    "root": "<root>",
+    "schema_version": 4,
+    "stale": false,
+    "symbols": 22,
+    "tool_version": "<tool_version>",
+    "tree": {
+      "children": [
+        {
+          "children": [
+            {
+              "name": "billing-api.yml"
+            },
+            {
+              "name": "empty-openapi.json"
+            },
+            {
+              "name": "openapi.yaml"
+            },
+            {
+              "name": "swagger.json"
+            }
+          ],
+          "name": "api"
+        },
+        {
+          "children": [
+            {
+              "name": "settings.yaml"
+            }
+          ],
+          "name": "config"
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "name": "004-immutable-audit-log.md"
+                },
+                {
+                  "name": "005-retention.md"
+                },
+                {
+                  "name": "006-malformed.md"
+                }
+              ],
+              "name": "adr"
+            },
+            {
+              "name": "guide.md"
+            },
+            {
+              "name": "links.md"
+            }
+          ],
+          "name": "docs"
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "name": "log.rs"
+                },
+                {
+                  "name": "retention.rs"
+                }
+              ],
+              "name": "audit"
+            },
+            {
+              "children": [
+                {
+                  "name": "invoice.py"
+                }
+              ],
+              "name": "billing"
+            }
+          ],
+          "name": "src"
+        }
+      ],
+      "name": "."
+    }
+  },
+  "tool": "status",
+  "total": 0,
+  "truncated": false
+}

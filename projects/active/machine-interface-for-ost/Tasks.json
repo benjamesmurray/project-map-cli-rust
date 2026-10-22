@@ -177,7 +177,7 @@
       "id": "4.1",
       "title": "Phase 4: JSON Renderer and Envelope",
       "description": "Create src/core/json_out.rs: to_json(tool, Result<result, QueryError>, index_info) -> serde_json::Value with the envelope in Data Models (tool, contract: 1, index {schema_version, commit, dirty, stale}, truncated, total, summary, results; or error {code, message}). JSON lists are capped by item limits only, never by characters; doc_section returns full text unless max_chars is given. Unit tests per tool on the fixtures. cargo test passes. index.state is ok, stale or missing (other index fields null when missing). JSON default item limits: 50 for search and query, 200 for blast_radius and plan; summary counts always cover every match.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "3.7"
       ]
@@ -186,7 +186,7 @@
       "id": "4.2",
       "title": "Phase 4: MCP format Argument, structured_content and New Tools",
       "description": "Add format: Option<String> ('toon' default, 'json') to every MCP tool struct; invalid values give invalid_argument. For json, return the JSON as text content and the same object as CallToolResult.structured_content, with is_error true on errors. Register modules(path_prefix?, max_depth?) and imports(package, path_prefix?, limit?), add max_depth to status and doc_outline, and an optional limit to search, query, blast_radius and plan (omitted in TOON behaves as 0.3.0). Declare no outputSchema. init's JSON summary includes the new commit and dirty. Set the server's MCP instructions: a few lines on what the index covers and to prefer the map tools over grep for symbols, dependents, imports and docs, informed by the 1.5 finding; an MCP test checks initialize returns them. Missing or stale index gives the typed errors from every tool except status. Descriptions: modules and imports say when to use them instead of grep (wording in the Specification); the format argument says JSON is for programs and costs more tokens. Extend the existing tool-description test to all fifteen tools. MCP tests: every tool in both formats, structured_content equals parsed text, error envelopes. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.1"
       ]
@@ -195,7 +195,7 @@
       "id": "4.3",
       "title": "Phase 4: CLI --format, --max-depth, modules and imports",
       "description": "Add --format toon|json to every query subcommand (not build, refresh, watch or mcp), --limit where the MCP tool gained limit, --max-depth to status and doc outline, and modules and imports subcommands mirroring the MCP tools. JSON goes to stdout only; errors in JSON mode print the error envelope to stdout and exit non-zero. Integration tests for each new flag and subcommand. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.1"
       ]
@@ -204,7 +204,7 @@
       "id": "4.4",
       "title": "Phase 4: Golden JSON Contract Tests",
       "description": "Create tests/fixtures/json_contract/<tool>[_<case>].json goldens for every tool on the docs and imports fixtures (built into a fixed-name tempdir so paths are stable; status build fields and Git SHA normalised before comparison). The test fails on any added, removed or renamed field or changed value, and prints a diff. Add an UPDATE_GOLDENS=1 path that rewrites them, documented in the fixture README as a breaking-change step that needs a contract bump and CHANGELOG entry. cargo test passes. Extend the 3.6 determinism test to JSON for every tool.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.2",
         "4.3"
@@ -214,7 +214,7 @@
       "id": "4.5",
       "title": "Phase 4: Server Mode Hardening and Tests",
       "description": "Tracing subscriber: with_ansi(false) unless stderr is a terminal (std::io::IsTerminal); no progress output anywhere when not a TTY. Spawned-binary tests (CARGO_BIN_EXE): mcp in an empty tempdir answers initialize and status within 2 seconds saying the index is missing; another tool returns index_missing with is_error; stderr contains no \\x1b[ bytes; without -w no watcher thread starts and editing a file does not trigger a rebuild (index mtime unchanged after 2 s); stdout contains only valid JSON-RPC frames. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.2"
       ]
@@ -223,7 +223,7 @@
       "id": "4.6",
       "title": "Phase 4 Gate",
       "description": "Phase 4 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase4_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 5.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "4.4",
         "4.5"

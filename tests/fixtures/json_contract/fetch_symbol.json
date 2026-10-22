@@ -1,0 +1,21 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "end_line": 22,
+    "line": 20,
+    "path": "src/audit/log.rs",
+    "source": "pub fn verify_chain(log: &AuditLog) -> bool {\n    !log.entries.is_empty()\n}",
+    "symbol": "verify_chain"
+  },
+  "tool": "fetch_symbol",
+  "total": 1,
+  "truncated": false
+}

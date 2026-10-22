@@ -1,0 +1,20 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "requested": "flush_buffer",
+    "target_line": 15,
+    "target_path": "src/audit/retention.rs",
+    "target_symbol": "flush_buffer"
+  },
+  "tool": "plan",
+  "total": 0,
+  "truncated": false
+}

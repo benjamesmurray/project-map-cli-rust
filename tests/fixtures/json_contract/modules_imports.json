@@ -1,0 +1,46 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "code_files": 8,
+      "depth": 0,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 9,
+      "path": "rust_crate",
+      "symbols": 14
+    },
+    {
+      "code_files": 7,
+      "depth": 1,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 7,
+      "path": "rust_crate/src",
+      "symbols": 13
+    },
+    {
+      "code_files": 1,
+      "depth": 1,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 1,
+      "path": "rust_crate/tests",
+      "symbols": 1
+    }
+  ],
+  "summary": {
+    "max_depth": 1,
+    "path_prefix": "rust_crate"
+  },
+  "tool": "modules",
+  "total": 3,
+  "truncated": false
+}

@@ -1,0 +1,91 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "code_files": 3,
+      "depth": 0,
+      "doc_files": 5,
+      "doc_sections": 27,
+      "files": 13,
+      "path": ".",
+      "symbols": 22
+    },
+    {
+      "code_files": 0,
+      "depth": 1,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 4,
+      "path": "api",
+      "symbols": 0
+    },
+    {
+      "code_files": 0,
+      "depth": 1,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 1,
+      "path": "config",
+      "symbols": 5
+    },
+    {
+      "code_files": 0,
+      "depth": 1,
+      "doc_files": 5,
+      "doc_sections": 27,
+      "files": 5,
+      "path": "docs",
+      "symbols": 0
+    },
+    {
+      "code_files": 0,
+      "depth": 2,
+      "doc_files": 3,
+      "doc_sections": 8,
+      "files": 3,
+      "path": "docs/adr",
+      "symbols": 0
+    },
+    {
+      "code_files": 3,
+      "depth": 1,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 3,
+      "path": "src",
+      "symbols": 17
+    },
+    {
+      "code_files": 2,
+      "depth": 2,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 2,
+      "path": "src/audit",
+      "symbols": 11
+    },
+    {
+      "code_files": 1,
+      "depth": 2,
+      "doc_files": 0,
+      "doc_sections": 0,
+      "files": 1,
+      "path": "src/billing",
+      "symbols": 6
+    }
+  ],
+  "summary": {
+    "max_depth": 2,
+    "path_prefix": "."
+  },
+  "tool": "modules",
+  "total": 8,
+  "truncated": false
+}

@@ -1,0 +1,39 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": null,
+    "stale": null,
+    "state": "missing"
+  },
+  "results": [],
+  "summary": {
+    "active_features": [],
+    "api_operations": 0,
+    "at_head": null,
+    "branch": null,
+    "built_at": "<built_at>",
+    "commit": null,
+    "dirty": null,
+    "dirty_now": null,
+    "doc_files": 0,
+    "doc_references": 0,
+    "doc_sections": 0,
+    "edges": 0,
+    "files": 0,
+    "head_now": null,
+    "next_step": "Run `project-map refresh` (or call the `init` tool) to build the index.",
+    "root": "<root>",
+    "schema_version": 0,
+    "stale": false,
+    "symbols": 0,
+    "tool_version": "<tool_version>",
+    "tree": {
+      "name": "."
+    }
+  },
+  "tool": "status",
+  "total": 0,
+  "truncated": false
+}

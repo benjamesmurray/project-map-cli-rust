@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "error": {
+    "code": "index_missing",
+    "message": "Error: Index not loaded"
+  },
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": null,
+    "stale": null,
+    "state": "missing"
+  },
+  "tool": "search"
+}

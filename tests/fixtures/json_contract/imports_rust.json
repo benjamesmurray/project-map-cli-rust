@@ -1,0 +1,47 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "language": "rust",
+      "line": 1,
+      "module": "serde_json",
+      "package": "serde_json",
+      "path": "rust_crate/src/lib.rs",
+      "resolved": false,
+      "text": "extern crate serde_json;"
+    },
+    {
+      "language": "rust",
+      "line": 8,
+      "module": "serde_json::Value",
+      "package": "serde_json",
+      "path": "rust_crate/src/lib.rs",
+      "resolved": false,
+      "text": "use serde_json::Value;"
+    },
+    {
+      "language": "rust",
+      "line": 2,
+      "module": "serde_json::Value",
+      "package": "serde_json",
+      "path": "rust_crate/tests/uses_crate_name.rs",
+      "resolved": false,
+      "text": "use serde_json::Value;"
+    }
+  ],
+  "summary": {
+    "files": 2,
+    "imports": 3,
+    "query": "serde_json"
+  },
+  "tool": "imports",
+  "total": 3,
+  "truncated": false
+}

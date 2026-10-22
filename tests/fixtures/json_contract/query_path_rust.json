@@ -1,0 +1,45 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "kind": "file",
+      "line": 0,
+      "path": "rust_crate/src/a/b.rs",
+      "role": "Import",
+      "symbol": "rust_crate.src.a.b"
+    },
+    {
+      "kind": "struct",
+      "line": 3,
+      "path": "rust_crate/src/a/b.rs",
+      "role": "Import",
+      "symbol": "Sym"
+    },
+    {
+      "kind": "file",
+      "line": 0,
+      "path": "rust_crate/src/a/c.rs",
+      "role": "Import",
+      "symbol": "rust_crate.src.a.c"
+    },
+    {
+      "end_line": 10,
+      "kind": "function",
+      "line": 5,
+      "symbol": "sym_count"
+    }
+  ],
+  "summary": {
+    "path": "rust_crate/src/user.rs"
+  },
+  "tool": "query",
+  "total": 4,
+  "truncated": false
+}

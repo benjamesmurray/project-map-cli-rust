@@ -1,0 +1,123 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "anchor": "decision",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Decision",
+      "path": "docs/adr/004-immutable-audit-log.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "append"
+    },
+    {
+      "anchor": "decision",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Decision",
+      "path": "docs/adr/004-immutable-audit-log.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "rotate_segments"
+    },
+    {
+      "anchor": "step-2-configure-auditlog-fast-",
+      "direction": "to_docs",
+      "form": "file",
+      "heading": "Step 2: Configure AuditLog (fast!) 🚀",
+      "path": "docs/guide.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "step-2-configure-auditlog-fast-",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Step 2: Configure AuditLog (fast!) 🚀",
+      "path": "docs/guide.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "AuditLog"
+    },
+    {
+      "anchor": "",
+      "direction": "to_docs",
+      "form": "file",
+      "heading": "(before first heading)",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "markdown-links",
+      "direction": "to_docs",
+      "form": "file",
+      "heading": "Markdown Links",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_docs",
+      "form": "file",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "append"
+    },
+    {
+      "anchor": "qualified-symbols",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Qualified Symbols",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "new"
+    },
+    {
+      "anchor": "bare-names",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Bare Names",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "rotate_segments"
+    },
+    {
+      "anchor": "fenced-code",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Fenced Code",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "new"
+    },
+    {
+      "anchor": "fenced-code",
+      "direction": "to_docs",
+      "form": "symbol",
+      "heading": "Fenced Code",
+      "path": "docs/links.md",
+      "target_path": "src/audit/log.rs",
+      "target_symbol": "verify_chain"
+    }
+  ],
+  "summary": {
+    "path": "src/audit/log.rs",
+    "total": 12
+  },
+  "tool": "doc_links",
+  "total": 12,
+  "truncated": false
+}

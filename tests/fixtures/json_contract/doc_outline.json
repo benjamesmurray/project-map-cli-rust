@@ -1,0 +1,114 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "anchor": "operator-guide",
+      "depth": 1,
+      "end_line": 48,
+      "heading": "Operator Guide",
+      "level": 1,
+      "line": 3
+    },
+    {
+      "anchor": "usage",
+      "depth": 2,
+      "end_line": 9,
+      "heading": "Usage",
+      "level": 2,
+      "line": 7
+    },
+    {
+      "anchor": "usage-1",
+      "depth": 2,
+      "end_line": 13,
+      "heading": "Usage",
+      "level": 2,
+      "line": 11
+    },
+    {
+      "anchor": "usage-1-1",
+      "depth": 2,
+      "end_line": 17,
+      "heading": "Usage 1",
+      "level": 2,
+      "line": 15
+    },
+    {
+      "anchor": "usage-2",
+      "depth": 2,
+      "end_line": 27,
+      "heading": "Usage",
+      "level": 2,
+      "line": 19
+    },
+    {
+      "anchor": "skipped-level-target",
+      "depth": 3,
+      "end_line": 27,
+      "heading": "Skipped Level Target",
+      "level": 3,
+      "line": 23
+    },
+    {
+      "anchor": "deep-detail",
+      "depth": 4,
+      "end_line": 27,
+      "heading": "Deep Detail",
+      "level": 4,
+      "line": 25
+    },
+    {
+      "anchor": "step-2-configure-auditlog-fast-",
+      "depth": 2,
+      "end_line": 39,
+      "heading": "Step 2: Configure AuditLog (fast!) 🚀",
+      "level": 2,
+      "line": 29
+    },
+    {
+      "anchor": "überblick--café",
+      "depth": 2,
+      "end_line": 43,
+      "heading": "Überblick & Café",
+      "level": 2,
+      "line": 41
+    },
+    {
+      "anchor": "setext-heading-level-two",
+      "depth": 2,
+      "end_line": 48,
+      "heading": "Setext Heading Level Two",
+      "level": 2,
+      "line": 45
+    },
+    {
+      "anchor": "casting-director-notes",
+      "depth": 1,
+      "end_line": 56,
+      "heading": "Casting Director Notes",
+      "level": 1,
+      "line": 50
+    },
+    {
+      "anchor": "skipped-from-h1",
+      "depth": 2,
+      "end_line": 56,
+      "heading": "Skipped From H1",
+      "level": 3,
+      "line": 54
+    }
+  ],
+  "summary": {
+    "path": "docs/guide.md"
+  },
+  "tool": "doc_outline",
+  "total": 12,
+  "truncated": false
+}
