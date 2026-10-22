@@ -5,7 +5,7 @@ All notable changes to `project-map-cli-rust` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-10-22
 
 ### Upgrade note (read first)
 The index `schema_version` is now 4. After installing 0.4.0, **restart every running `project-map-cli-rust mcp` process** and run `project-map refresh` once per workspace. A 0.3.0 watcher refuses to overwrite a schema-4 index (its forward guard logs it and skips the rebuild), so it cannot damage one, but it cannot read the Git fields or imports either. A schema-3 index still serves the code and doc tools, is reported as stale with `commit: null` and is never rewritten by a query; `imports` returns `index_stale` on it.

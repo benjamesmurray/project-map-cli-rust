@@ -260,7 +260,7 @@
       "id": "6.2",
       "title": "Phase 6: Quality Gate and Coverage Map",
       "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher, regression and spawned-binary suites) clean. Walk every In-Scope item, Technical Constraint, User Story criterion and Verification Criterion and map each to the task and test covering it in projects/active/machine-interface-for-ost/reports/verification.md; any gap becomes a task before release.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "6.1"
       ]
@@ -269,7 +269,7 @@
       "id": "6.3",
       "title": "Phase 6: Version and Release Prep",
       "description": "Bump Cargo.toml to 0.4.0; cargo publish --dry-run passes on a clean tree. Write projects/active/machine-interface-for-ost/reports/ost-manager-handoff.md mapping each item of /home/benmurray/Projects/OST-Manager/projects/p4-project-map-uplift.md (1-10) to its evidence (tests, reports), the tool-deferral finding (1.5), and a proposed ROADMAP line for OST-Manager's P4 row and P5 gate (>= 0.4.0). Do not edit the OST-Manager repository. Commit and push, then STOP: tagging v0.4.0, cargo publish, cargo install --version 0.4.0 --locked --force and restarting servers wait for the owner's go-ahead.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "6.2"
       ]
