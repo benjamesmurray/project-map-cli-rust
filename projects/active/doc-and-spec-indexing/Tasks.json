@@ -345,7 +345,7 @@
       "id": "8.3",
       "title": "Phase 8: Fix Index Swap When latest Is A Real Directory",
       "description": "Non-gating follow-up. On Unix, replacing a real-directory .project-map/latest/ fails with EISDIR because the atomic swap assumes a symlink. Reproduce with a test that starts from a real directory (as written by older builds), then make the swap migrate it safely: move the old directory aside, install the new symlink atomically, and remove the old one, without leaving the index missing at any point readers could observe. Concurrent-watcher tests still pass; cargo test, fmt and clippy pass.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "8.2"
       ]

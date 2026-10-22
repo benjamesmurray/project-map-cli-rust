@@ -622,7 +622,7 @@ impl Orchestrator {
         ));
 
         if symlink_result.is_ok() {
-            fs::rename(&tmp_link, &latest_link)?;
+            publish_latest_symlink(&tmp_link, &latest_link)?;
         } else {
             let tmp_dir = tmp_link;
             fs::create_dir_all(&tmp_dir)?;
@@ -671,6 +671,90 @@ impl Orchestrator {
         out_dir: &Path,
     ) -> Result<crate::core::query_engine::QueryEngine> {
         rebuild_and_publish(root, out_dir)
+    }
+}
+
+/// Moves the new `latest` symlink into place. Normally one atomic rename. Older
+/// builds wrote `latest/` as a real directory, over which `rename` of a symlink
+/// fails (`EISDIR`); that case is migrated without a moment at which `latest` is
+/// missing.
+#[cfg(unix)]
+fn publish_latest_symlink(tmp_link: &Path, latest_link: &Path) -> Result<()> {
+    use std::fs;
+
+    let is_real_dir = fs::symlink_metadata(latest_link)
+        .map(|m| m.is_dir() && !m.file_type().is_symlink())
+        .unwrap_or(false);
+    if !is_real_dir {
+        fs::rename(tmp_link, latest_link)?;
+        return Ok(());
+    }
+
+    // Linux: exchange the two names in one step, so readers see the old directory
+    // and then the new symlink, never neither. `tmp_link` then names the old
+    // directory, which is removed.
+    #[cfg(target_os = "linux")]
+    if exchange_paths(tmp_link, latest_link).is_ok() {
+        let _ = fs::remove_dir_all(tmp_link);
+        return Ok(());
+    }
+
+    swap_via_aside(tmp_link, latest_link)
+}
+
+/// Portable migration: move the old directory aside, install the symlink, then
+/// delete the old one. A reader that retries (`load_with_retry`) rides over the
+/// instant between the two renames. The old directory is restored if installing
+/// fails.
+#[cfg(unix)]
+fn swap_via_aside(tmp_link: &Path, latest_link: &Path) -> Result<()> {
+    use std::fs;
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let aside = latest_link.with_file_name(format!("latest.old.{}.{}", std::process::id(), nanos));
+    fs::rename(latest_link, &aside)?;
+    if let Err(e) = fs::rename(tmp_link, latest_link) {
+        let _ = fs::rename(&aside, latest_link);
+        return Err(e.into());
+    }
+    let _ = fs::remove_dir_all(&aside);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn publish_latest_symlink(tmp_link: &Path, latest_link: &Path) -> Result<()> {
+    std::fs::rename(tmp_link, latest_link)?;
+    Ok(())
+}
+
+/// `renameat2(RENAME_EXCHANGE)`: atomically swaps two paths.
+#[cfg(target_os = "linux")]
+fn exchange_paths(a: &Path, b: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let to_c = |p: &Path| {
+        CString::new(p.as_os_str().as_bytes())
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))
+    };
+    let (a, b) = (to_c(a)?, to_c(b)?);
+    // SAFETY: both pointers are valid NUL-terminated strings for the call.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -832,5 +916,111 @@ mod tests {
             total_reads > 0,
             "Reader should have executed multiple reads"
         );
+    }
+
+    /// A `latest/` that is a real directory, as older builds wrote it.
+    fn out_dir_with_real_latest(temp: &Path, orch: &Orchestrator) -> std::path::PathBuf {
+        let out_dir = temp.join("out");
+        let latest = out_dir.join("latest");
+        fs::create_dir_all(&latest).unwrap();
+        orch.save_index(&latest.join(".project-map.json")).unwrap();
+        assert!(!fs::symlink_metadata(&latest)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        out_dir
+    }
+
+    fn test_orchestrator(temp: &Path) -> Orchestrator {
+        let root = temp.join("project");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("test.rs"), "fn foo() {}").unwrap();
+        let mut orch = Orchestrator::new();
+        orch.build_index(&root, &temp.join("scratch-out")).unwrap();
+        orch
+    }
+
+    #[test]
+    fn test_real_directory_latest_is_migrated_to_a_symlink() {
+        let temp = tempdir().unwrap();
+        let orch = test_orchestrator(temp.path());
+        let out_dir = out_dir_with_real_latest(temp.path(), &orch);
+
+        orch.save_index_versioned(&out_dir).unwrap();
+
+        let latest = out_dir.join("latest");
+        assert!(fs::symlink_metadata(&latest)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(QueryEngine::load(&latest.join(".project-map.json")).is_ok());
+        let leftovers: Vec<_> = fs::read_dir(&out_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with("latest."))
+            .collect();
+        assert!(leftovers.is_empty(), "left behind: {leftovers:?}");
+
+        // A second save over the symlink keeps working.
+        orch.save_index_versioned(&out_dir).unwrap();
+        assert!(QueryEngine::load(&latest.join(".project-map.json")).is_ok());
+    }
+
+    #[test]
+    fn test_migrating_a_real_directory_latest_is_never_observed_missing() {
+        let temp = tempdir().unwrap();
+        let orch = test_orchestrator(temp.path());
+        let out_dir = out_dir_with_real_latest(temp.path(), &orch);
+        let latest_file = out_dir.join("latest").join(".project-map.json");
+
+        let done = Arc::new(AtomicBool::new(false));
+        let done_reader = Arc::clone(&done);
+        let reader = std::thread::spawn(move || {
+            let mut reads = 0u32;
+            while !done_reader.load(Ordering::Relaxed) {
+                let res = QueryEngine::load(&latest_file);
+                assert!(res.is_ok(), "latest missing or corrupt mid-swap: {res:?}");
+                reads += 1;
+            }
+            reads
+        });
+
+        orch.save_index_versioned(&out_dir).unwrap();
+        for _ in 0..20 {
+            orch.save_index_versioned(&out_dir).unwrap();
+        }
+        done.store(true, Ordering::Relaxed);
+        assert!(reader.join().expect("reader must not panic") > 0);
+    }
+
+    #[test]
+    fn test_directory_swap_fallback_without_the_atomic_exchange() {
+        let temp = tempdir().unwrap();
+        let base = temp.path();
+        fs::create_dir_all(base.join("latest")).unwrap();
+        fs::write(base.join("latest").join("old.txt"), "old").unwrap();
+        fs::create_dir_all(base.join("backups").join("b1")).unwrap();
+        fs::write(base.join("backups").join("b1").join("new.txt"), "new").unwrap();
+        let tmp_link = base.join("latest.tmp.1.1");
+        super::sys_symlink(Path::new("backups").join("b1"), &tmp_link).unwrap();
+
+        super::swap_via_aside(&tmp_link, &base.join("latest")).unwrap();
+
+        assert!(fs::symlink_metadata(base.join("latest"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            fs::read_to_string(base.join("latest").join("new.txt")).unwrap(),
+            "new"
+        );
+        assert!(!base.join("latest").join("old.txt").exists());
+        let leftovers = fs::read_dir(base)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with("latest.old"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 }
