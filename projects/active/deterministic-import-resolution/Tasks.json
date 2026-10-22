@@ -96,7 +96,7 @@
       "id": "3.1",
       "title": "Phase 3: Real-Repository Verification",
       "description": "Repeat the 1.2 measurements with the 0.4.1 release build on the same three repositories: 5 builds each must agree exactly on every recorded number, and two directory copies of OST-Manager must give identical blast_radius JSON for config.py::Settings. Record 0.4.0 vs 0.4.1 edge, Imports edge, resolved and ambiguous counts and the five blast totals per repository, and indexing time against the +5 % limit, in projects/active/deterministic-import-resolution/reports/verification.md. Inspect a sample of 20 newly unlinked and 20 still-linked suffix-resolved imports on OST-Manager and /opt/wde; any wrong link means tightening the tier rules (new task) before release. Map every Specification item and Verification Criterion to its task and test in the same report.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "2.5"
       ]
@@ -105,7 +105,7 @@
       "id": "3.2",
       "title": "Phase 3: README, CHANGELOG and Version",
       "description": "README: import resolution (strategies 1-3, segment-based tiers, ties left unlinked), the determinism guarantee (same tree gives the same graph and index bytes apart from build fields), and the imports package-name note (Python packages are their first segment: imports google, not google.*; the prefix form is for scoped JS packages). CHANGELOG 0.4.1 under Fixed: nondeterministic import resolution, raw-string suffix matches, sorted walk; note that Imports edges and blast_radius results change. Bump Cargo.toml to 0.4.1; cargo publish --dry-run passes on a clean tree.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "3.1"
       ]

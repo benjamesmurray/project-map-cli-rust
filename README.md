@@ -241,7 +241,7 @@ An error has `"error": {"code", "message"}` and no `summary` or `results`; MCP e
 
 **`modules(path_prefix?, max_depth=2)`** lists each directory under the prefix down to `max_depth` levels with `files`, `code_files` (a recognised language), `symbols` (code symbols; doc and API nodes excluded), `doc_files` and `doc_sections`. Counts are recursive, including directories below `max_depth`. Directories are sorted by path; files at the repository root count under `.`.
 
-**`imports(package, path_prefix?, limit=50)`** returns every import of an external package: path, line, the trimmed import line (at most 200 characters), the package, `resolved` (linked to an indexed file or symbol) and the language. A package matches exactly; a query ending in `/*` or `.*` matches by prefix (`@sentry/*` matches `@sentry/node` and `@sentry/react`). `files` and `imports` count every match, not only the `limit` listed. Results are ordered by path, line, module (`import a, b` is two records on one line). A schema-3 index gives `index_stale`.
+**`imports(package, path_prefix?, limit=50)`** returns every import of an external package: path, line, the trimmed import line (at most 200 characters), the package, `resolved` (linked to an indexed file or symbol) and the language. A package matches exactly; a query ending in `/*` or `.*` matches by prefix (`@sentry/*` matches `@sentry/node` and `@sentry/react`). A Python package is named by its first segment, so `imports google` finds `google.cloud` imports and `imports "google.*"` does not; the prefix form is for scoped JavaScript packages (`@sentry/*`). `files` and `imports` count every match, not only the `limit` listed. Results are ordered by path, line, module (`import a, b` is two records on one line). A schema-3 index gives `index_stale`.
 
 Package names:
 
@@ -292,6 +292,16 @@ Every list has a total order, and target selection is deterministic (when severa
 | doc tools | their existing orders, with path and byte offset as the final keys |
 
 The file outline used to list symbols in reverse source order; it is now source order.
+
+### Import resolution and the build guarantee (v0.4.1+)
+
+The same tree always gives the same graph. Two builds of one tree, in one process or on two machines, give the same edges, the same `imports` table and (apart from `built_at`, `builder_pid`, `root` and the Git fields) a byte-identical index file. Files are walked in name order and no `HashMap` or `HashSet` order reaches the graph, the side tables or any tool output.
+
+An import is linked to a file in this order; the first strategy that succeeds wins:
+
+1. **Exact name.** The import equals a file's dotted name (`src.app.config` for `src/app/config.py`).
+2. **Relative path.** A relative import (`./util`) is resolved against the importing file, trying `.ts`, `.tsx`, `/index.ts`, `/index.tsx` and `/main.tf`.
+3. **Suffix match** (Rust files skip it; they have their own `use` resolver). On whole dot-separated segments, never raw text, so `redis` does not match a module `myredis`. Tiers, best first: (1) the file's name ends with the import (`src.ost_manager.config` for `ost_manager.config`); (2) the import starts with the file's name (`pkg.mod.Thing` for `pkg/mod.py`); (3) both have two or more segments and their last two segments are equal. Within a tier the file with the fewest extra leading segments wins. **If two or more files are still tied, the import is left unlinked** (`resolved: false` in `imports`) rather than guessed. Build with `PROJECT_MAP_LOG=debug` to see the first 20 ties and the total on stderr.
 
 ## 🔒 Concurrency & Watcher Safety (v0.2.0+)
 

@@ -5,6 +5,24 @@ All notable changes to `project-map-cli-rust` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-22
+
+Patch release: no new tools, no schema change, no JSON contract change (`contract` stays 1, `schema_version` stays 4). Behaviour change: some `Imports` edges, and therefore some `blast_radius` results, differ from 0.4.0 (see below). Restart running `mcp` servers and run `project-map refresh` once per workspace to pick it up.
+
+### Fixed
+- **Import resolution was not deterministic.** The suffix-match fallback took the first of several matching files in a `HashMap`, whose iteration order changes on every build, so two builds of one tree could give different `blast_radius` results (OST-Manager `config.py::Settings`: 115 or 143; `/opt/wde` `logging.py`: 171 to 176). It now ranks every candidate on whole dot-separated segments (file name ends with the import; import starts with the file name; last two segments equal; fewest extra leading segments wins) and **leaves a tie unlinked**.
+- **Raw-string suffix matches.** `import redis` linked to a module `myredis`, and standard-library imports (`os`, `re`, `time`, `math`) linked to unrelated files. Measured with 0.4.0 vs 0.4.1: OST-Manager 657 to 628 `Imports` edges, `/opt/wde` 1,942 to 1,606; no import became linked that was not before. Blast-radius counts fall where wrong links were dropped.
+- **`blast_radius` TOON summary** listed equally sized directories in hash order; ties are now broken by directory name.
+- **The file walk was in directory-entry order.** It is now sorted by file name, so node and edge order, and the index bytes (apart from the build fields), depend only on the tree.
+
+### Changed
+- A member imported from a module (`import pkg.mod.Thing`, file `pkg/mod.py`) now links to the module.
+- Ties are counted and, with `PROJECT_MAP_LOG=debug`, the first 20 and the total are logged on `build`/`refresh`. Callers see them as `resolved: false` in `imports`.
+- Indexing is faster on large trees (`/opt/wde`: 2.08 s to 1.69 s).
+
+### Documentation
+- README: how imports are resolved, the determinism guarantee, and the package-name rule for `imports` on Python packages.
+
 ## [0.4.0] - 2026-10-22
 
 ### Upgrade note (read first)
