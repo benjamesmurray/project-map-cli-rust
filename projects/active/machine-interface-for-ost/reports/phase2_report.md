@@ -16,7 +16,7 @@ Date: 2026-10-22. Gate task: 2.6. Next: Phase 3, after the owner's approval.
 
 - Before: 210 passing. After: **250 passing, 0 failed**. `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` are clean.
 - New: `tests/git_state_test.rs` (12: clean, edited, untracked, ignored, `.project-map` not dirtying, detached HEAD, not a repository, no commits, Git missing via empty PATH, fake `git` for `GIT_OPTIONAL_LOCKS=0`, exit 128 with `error`, timeout, shared query budget), `tests/javascript_index_test.rs` (8), `tests/imports_table_test.rs` (8, including edge counts by type for 13 existing non-Rust fixtures taken from the 0.3.0 binary), unit tests in `graph.rs` (schema-3 load, schema-4 round trip, a 0.3.0-shaped reader parsing a schema-4 index), `parser.rs` (package rules, import records) and `rust_use.rs` (4); `regression_test.rs` gained a schema-3 never-rewritten test.
-- **This repository, same tree, 0.3.0 binary vs new binary:** `Imports` edges 17 to 215 (total edges 1,603 to 1,813; files 130 to 135, the five new JS fixture files). The side table holds 332 records, 152 resolved. The rise is Rust `use` resolution plus the new JS files; no other edge type moved apart from `Contains`/`References` for those five files.
+- **This repository, same tree, 0.3.0 binary vs new binary:** `Imports` edges 17 to 215 (total edges 1,608 to 1,820; files 130 to 135, the five new JS fixture files). The side table holds 332 records, 152 resolved. The rise is Rust `use` resolution plus the new JS files; no other edge type moved apart from `Contains`/`References` for those five files.
 
 ## Deviations from the Specification, and why
 
