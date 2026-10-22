@@ -46,7 +46,7 @@
       "id": "2.1",
       "title": "Phase 2: docs.rs Skeleton and Section Tree",
       "description": "Add pulldown-cmark to Cargo.toml and create src/core/docs.rs (registered in core/mod.rs) with parse_markdown(path, text) -> DocOutline { meta, sections, mentions, term_candidates }. Build sections from heading events: name = heading text (inline code/emphasis flattened), kind h1..h6, 1-based line, start_byte at the heading, end_byte at the next heading of the same or higher level or EOF, and a parent index so the tree is file -> top sections -> subsections. Frontmatter bytes are excluded from section ranges but byte offsets stay relative to the original file. Unit tests on fixtures: ranges nest correctly, skipped levels (h1 then h3), text before the first heading, setext headings, headings inside fenced code are not sections. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.2"
       ]
@@ -55,7 +55,7 @@
       "id": "2.2",
       "title": "Phase 2: GitHub Anchor Slugs",
       "description": "Implement the GitHub slug algorithm (lowercase, drop punctuation except '-' and '_', spaces to '-', keep unicode letters/digits) and duplicate handling per file: first 'foo', then 'foo-1', 'foo-2'. Store in the section's anchor (role). Unit tests: punctuation, inline code in heading, emoji, non-ASCII, three duplicate headings giving foo / foo-1 / foo-2, and a heading whose slug collides with an earlier suffixed slug. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]
@@ -64,7 +64,7 @@
       "id": "2.3",
       "title": "Phase 2: Frontmatter to DocMeta",
       "description": "Detect a leading '---' YAML block, parse with serde_yaml into DocMeta: id, title, status, date (string as written, also when YAML types it as a date or number), domain, tags and supersedes as scalar or list (both -> Vec<String>). Unknown keys ignored. Malformed YAML yields no DocMeta, does not fail the file, and the block is still excluded from sections. Unit tests for every key, scalar vs list for tags and supersedes, numeric id, missing frontmatter, malformed frontmatter, '---' used later as a thematic break (not frontmatter). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]
@@ -73,7 +73,7 @@
       "id": "2.4",
       "title": "Phase 2: Mention Collection",
       "description": "During the event walk, collect raw mentions with byte offsets and attribute each to the DEEPEST section whose range contains it (none if before the first heading: attribute to the file-level pseudo section or drop, decide and document). Kinds: MarkdownLink (relative targets only; strip #fragment and query; skip http(s), mailto and pure #anchor links), CodeSpan (inline code), FencedCode (identifier-like tokens and path-like tokens from fenced blocks, including path::sym, path:line and Type::method / Type.method forms). Classification into rule forms happens here (Path, PathSymbol, PathLine, TypeMember, BareName); resolution happens in 4.2/4.3. Unit tests: each fixture mention kind is collected with the right form, external links ignored, a mention in an h3 under an h2 is attributed to the h3 only. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]
@@ -82,7 +82,7 @@
       "id": "2.5",
       "title": "Phase 2: Term Candidate Extraction",
       "description": "Collect term candidates from paragraph and list-item text only (not headings, code spans, fenced code, link URLs, or frontmatter): runs of 2-4 consecutive capitalised words after stripping leading stopwords (The, A, An, This, That, These, Those, Our, Each, Every, When, If, In, For, plus a documented short list); a run reduced below 2 words by stripping is dropped; bold spans of 1-4 words. Collapse whitespace, keep case. Record (term, section anchor, byte offset) per occurrence. Unit tests: stopword stripping, run longer than 4 words (document the split rule), bold single word, bold over 4 words ignored, capitalised words in headings and code ignored, link text counted but URLs not. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]

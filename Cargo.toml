@@ -55,6 +55,7 @@ notify = "6.1"
 crossbeam-channel = "0.5"
 serde_yaml = "0.9"
 fs4 = "1.1.0"
+pulldown-cmark = { version = "0.13", default-features = false }
 
 
 

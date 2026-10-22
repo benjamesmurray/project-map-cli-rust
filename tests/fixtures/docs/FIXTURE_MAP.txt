@@ -38,7 +38,7 @@ docs/guide.md  (tasks 2.1, 2.2, 2.5)
 - Terms: Casting Director, Audit Service (also as link text), Compliance
   Officer (after stripping "The"), bold "ledger"; "This Week" reduces to one
   word and is dropped; "Release Manager" occurs once and is dropped; a
-  6-word capitalised run appears twice (split rule decided in 2.5); a
+  6-word capitalised run appears twice (dropped, not split: 2.5); a
   5-word bold span is ignored; terms in headings, inline code and fenced
   code do not count.
 
