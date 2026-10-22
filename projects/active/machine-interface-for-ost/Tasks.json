@@ -269,7 +269,7 @@
       "id": "6.3",
       "title": "Phase 6: Version and Release Prep",
       "description": "Bump Cargo.toml to 0.4.0; cargo publish --dry-run passes on a clean tree. Write projects/active/machine-interface-for-ost/reports/ost-manager-handoff.md mapping each item of /home/benmurray/Projects/OST-Manager/projects/p4-project-map-uplift.md (1-10) to its evidence (tests, reports), the tool-deferral finding (1.5), and a proposed ROADMAP line for OST-Manager's P4 row and P5 gate (>= 0.4.0). Do not edit the OST-Manager repository. Commit and push, then STOP: tagging v0.4.0, cargo publish, cargo install --version 0.4.0 --locked --force and restarting servers wait for the owner's go-ahead.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "6.2"
       ]
