@@ -87,7 +87,7 @@
       "id": "2.5",
       "title": "Phase 2 Gate",
       "description": "Phase 2 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase2_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 3.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "2.4"
       ]
@@ -96,7 +96,7 @@
       "id": "3.1",
       "title": "Phase 3: Real-Repository Verification",
       "description": "Repeat the 1.2 measurements with the 0.4.1 release build on the same three repositories: 5 builds each must agree exactly on every recorded number, and two directory copies of OST-Manager must give identical blast_radius JSON for config.py::Settings. Record 0.4.0 vs 0.4.1 edge, Imports edge, resolved and ambiguous counts and the five blast totals per repository, and indexing time against the +5 % limit, in projects/active/deterministic-import-resolution/reports/verification.md. Inspect a sample of 20 newly unlinked and 20 still-linked suffix-resolved imports on OST-Manager and /opt/wde; any wrong link means tightening the tier rules (new task) before release. Map every Specification item and Verification Criterion to its task and test in the same report.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "2.5"
       ]

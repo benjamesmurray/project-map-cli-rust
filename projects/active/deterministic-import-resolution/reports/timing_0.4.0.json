@@ -1,0 +1,375 @@
+{
+ "binary": "/home/benmurray/.cargo/bin/project-map-cli-rust",
+ "label": "0.4.0",
+ "repos": {
+  "OST-Manager": {
+   "builds": [
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/ost_manager/config.py::Settings": 115,
+      "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": 64,
+      "src/ost_manager/llm/client.py::src.ost_manager.llm.client": 49,
+      "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": 98,
+      "src/ost_manager/ost/store.py::src.ost_manager.ost.store": 83
+     },
+     "edges": 8129,
+     "imports_edges": 657,
+     "index_bytes": 1469449,
+     "resolved": 657,
+     "seconds": 0.233,
+     "unresolved": 482
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/ost_manager/config.py::Settings": 115,
+      "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": 64,
+      "src/ost_manager/llm/client.py::src.ost_manager.llm.client": 49,
+      "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": 98,
+      "src/ost_manager/ost/store.py::src.ost_manager.ost.store": 83
+     },
+     "edges": 8129,
+     "imports_edges": 657,
+     "index_bytes": 1469449,
+     "resolved": 657,
+     "seconds": 0.235,
+     "unresolved": 482
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/ost_manager/config.py::Settings": 115,
+      "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": 64,
+      "src/ost_manager/llm/client.py::src.ost_manager.llm.client": 49,
+      "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": 98,
+      "src/ost_manager/ost/store.py::src.ost_manager.ost.store": 83
+     },
+     "edges": 8129,
+     "imports_edges": 657,
+     "index_bytes": 1469449,
+     "resolved": 657,
+     "seconds": 0.236,
+     "unresolved": 482
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/ost_manager/config.py::Settings": 115,
+      "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": 64,
+      "src/ost_manager/llm/client.py::src.ost_manager.llm.client": 49,
+      "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": 98,
+      "src/ost_manager/ost/store.py::src.ost_manager.ost.store": 83
+     },
+     "edges": 8129,
+     "imports_edges": 657,
+     "index_bytes": 1469449,
+     "resolved": 657,
+     "seconds": 0.237,
+     "unresolved": 482
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/ost_manager/config.py::Settings": 115,
+      "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": 64,
+      "src/ost_manager/llm/client.py::src.ost_manager.llm.client": 49,
+      "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": 98,
+      "src/ost_manager/ost/store.py::src.ost_manager.ost.store": 83
+     },
+     "edges": 8129,
+     "imports_edges": 657,
+     "index_bytes": 1469449,
+     "resolved": 657,
+     "seconds": 0.232,
+     "unresolved": 482
+    }
+   ],
+   "distinct_values": {
+    "ambiguous": [
+     null
+    ],
+    "blast": {
+     "src/ost_manager/config.py::Settings": [
+      115
+     ],
+     "src/ost_manager/contracts/workspace.py::src.ost_manager.contracts.workspace": [
+      64
+     ],
+     "src/ost_manager/llm/client.py::src.ost_manager.llm.client": [
+      49
+     ],
+     "src/ost_manager/ost/errors.py::src.ost_manager.ost.errors": [
+      98
+     ],
+     "src/ost_manager/ost/store.py::src.ost_manager.ost.store": [
+      83
+     ]
+    },
+    "edges": [
+     8129
+    ],
+    "imports_edges": [
+     657
+    ],
+    "resolved": [
+     657
+    ],
+    "unresolved": [
+     482
+    ]
+   },
+   "identical_across_builds": true,
+   "median_seconds": 0.235
+  },
+  "self": {
+   "builds": [
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/core/graph.rs::src.core.graph": 19,
+      "src/core/mod.rs::src.core": 21,
+      "src/core/orchestrator.rs::Orchestrator": 18,
+      "src/core/query_engine.rs::QueryEngine": 26,
+      "src/core/toon.rs::ToonFormatter": 10
+     },
+     "edges": 2452,
+     "imports_edges": 292,
+     "index_bytes": 484110,
+     "resolved": 194,
+     "seconds": 0.256,
+     "unresolved": 233
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/core/graph.rs::src.core.graph": 19,
+      "src/core/mod.rs::src.core": 21,
+      "src/core/orchestrator.rs::Orchestrator": 18,
+      "src/core/query_engine.rs::QueryEngine": 26,
+      "src/core/toon.rs::ToonFormatter": 10
+     },
+     "edges": 2452,
+     "imports_edges": 292,
+     "index_bytes": 484110,
+     "resolved": 194,
+     "seconds": 0.251,
+     "unresolved": 233
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/core/graph.rs::src.core.graph": 19,
+      "src/core/mod.rs::src.core": 21,
+      "src/core/orchestrator.rs::Orchestrator": 18,
+      "src/core/query_engine.rs::QueryEngine": 26,
+      "src/core/toon.rs::ToonFormatter": 10
+     },
+     "edges": 2452,
+     "imports_edges": 292,
+     "index_bytes": 484110,
+     "resolved": 194,
+     "seconds": 0.256,
+     "unresolved": 233
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/core/graph.rs::src.core.graph": 19,
+      "src/core/mod.rs::src.core": 21,
+      "src/core/orchestrator.rs::Orchestrator": 18,
+      "src/core/query_engine.rs::QueryEngine": 26,
+      "src/core/toon.rs::ToonFormatter": 10
+     },
+     "edges": 2452,
+     "imports_edges": 292,
+     "index_bytes": 484110,
+     "resolved": 194,
+     "seconds": 0.245,
+     "unresolved": 233
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "src/core/graph.rs::src.core.graph": 19,
+      "src/core/mod.rs::src.core": 21,
+      "src/core/orchestrator.rs::Orchestrator": 18,
+      "src/core/query_engine.rs::QueryEngine": 26,
+      "src/core/toon.rs::ToonFormatter": 10
+     },
+     "edges": 2452,
+     "imports_edges": 292,
+     "index_bytes": 484110,
+     "resolved": 194,
+     "seconds": 0.245,
+     "unresolved": 233
+    }
+   ],
+   "distinct_values": {
+    "ambiguous": [
+     null
+    ],
+    "blast": {
+     "src/core/graph.rs::src.core.graph": [
+      19
+     ],
+     "src/core/mod.rs::src.core": [
+      21
+     ],
+     "src/core/orchestrator.rs::Orchestrator": [
+      18
+     ],
+     "src/core/query_engine.rs::QueryEngine": [
+      26
+     ],
+     "src/core/toon.rs::ToonFormatter": [
+      10
+     ]
+    },
+    "edges": [
+     2452
+    ],
+    "imports_edges": [
+     292
+    ],
+    "resolved": [
+     194
+    ],
+    "unresolved": [
+     233
+    ]
+   },
+   "identical_across_builds": true,
+   "median_seconds": 0.251
+  },
+  "wde": {
+   "builds": [
+    {
+     "ambiguous": null,
+     "blast": {
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": 62,
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": 71,
+      "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": 78,
+      "viz-portal/backend/app/api.py::viz-portal.backend.app.api": 29,
+      "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": 176
+     },
+     "edges": 42678,
+     "imports_edges": 1942,
+     "index_bytes": 11466550,
+     "resolved": 1942,
+     "seconds": 2.026,
+     "unresolved": 2961
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": 62,
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": 71,
+      "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": 66,
+      "viz-portal/backend/app/api.py::viz-portal.backend.app.api": 29,
+      "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": 174
+     },
+     "edges": 42678,
+     "imports_edges": 1942,
+     "index_bytes": 11466436,
+     "resolved": 1942,
+     "seconds": 2.092,
+     "unresolved": 2961
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": 55,
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": 71,
+      "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": 78,
+      "viz-portal/backend/app/api.py::viz-portal.backend.app.api": 24,
+      "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": 180
+     },
+     "edges": 42678,
+     "imports_edges": 1942,
+     "index_bytes": 11466557,
+     "resolved": 1942,
+     "seconds": 2.08,
+     "unresolved": 2961
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": 62,
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": 71,
+      "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": 83,
+      "viz-portal/backend/app/api.py::viz-portal.backend.app.api": 29,
+      "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": 180
+     },
+     "edges": 42678,
+     "imports_edges": 1942,
+     "index_bytes": 11466398,
+     "resolved": 1942,
+     "seconds": 2.018,
+     "unresolved": 2961
+    },
+    {
+     "ambiguous": null,
+     "blast": {
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": 62,
+      "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": 71,
+      "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": 73,
+      "viz-portal/backend/app/api.py::viz-portal.backend.app.api": 29,
+      "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": 179
+     },
+     "edges": 42678,
+     "imports_edges": 1942,
+     "index_bytes": 11466512,
+     "resolved": 1942,
+     "seconds": 2.114,
+     "unresolved": 2961
+    }
+   ],
+   "distinct_values": {
+    "ambiguous": [
+     null
+    ],
+    "blast": {
+     "streams/wde-contracts/src/main/kotlin/com/wde/contracts/Bar.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.Bar": [
+      55,
+      62
+     ],
+     "streams/wde-contracts/src/main/kotlin/com/wde/contracts/PhaseLabelEvent.kt::streams.wde-contracts.src.main.kotlin.com.wde.contracts.PhaseLabelEvent": [
+      71
+     ],
+     "utils/physics-lab/optimizer/optimizer.py::utils.physics-lab.optimizer.optimizer": [
+      66,
+      73,
+      78,
+      83
+     ],
+     "viz-portal/backend/app/api.py::viz-portal.backend.app.api": [
+      24,
+      29
+     ],
+     "viz-portal/backend/app/logging.py::viz-portal.backend.app.logging": [
+      174,
+      176,
+      179,
+      180
+     ]
+    },
+    "edges": [
+     42678
+    ],
+    "imports_edges": [
+     1942
+    ],
+    "resolved": [
+     1942
+    ],
+    "unresolved": [
+     2961
+    ]
+   },
+   "identical_across_builds": false,
+   "median_seconds": 2.08
+  }
+ },
+ "runs": 5
+}

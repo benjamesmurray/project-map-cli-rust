@@ -2,7 +2,7 @@ use crate::core::docs::{self, DocOutline, Resolution, ResolveTables, SymbolRef};
 use crate::core::graph::{
     EdgeType, ImportEntry, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION,
 };
-use crate::core::import_resolve::{resolve_by_suffix, SuffixResolution};
+use crate::core::import_resolve::{SuffixIndex, SuffixResolution};
 use crate::core::parser::package_name;
 use crate::core::parser::CodeParser;
 use crate::core::rust_use::{self, CrateInfo, RustTarget};
@@ -254,6 +254,7 @@ impl Orchestrator {
         let mut crate_cache: HashMap<String, CrateInfo> = HashMap::new();
         let symbols_by_file = symbol_lookup(&self.graph.graph);
         let fqn_set: BTreeSet<String> = fqn_to_node.keys().cloned().collect();
+        let suffix_index = SuffixIndex::new(&fqn_set);
         let mut ambiguous_imports = 0usize;
         for outline in outlines {
             let norm_from = normalize_rel_path(root, &outline.path);
@@ -305,7 +306,7 @@ impl Orchestrator {
 
                     // Strategy 3: whole-segment suffix match (fallback); a tie is left unlinked
                     if !resolved {
-                        match resolve_by_suffix(&imp, &fqn_set) {
+                        match suffix_index.resolve(&imp) {
                             SuffixResolution::Unique(fqn) => {
                                 self.graph.add_edge(
                                     from_node,

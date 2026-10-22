@@ -49,7 +49,15 @@ def one_build(root, symbols):
             r = subprocess.run([binary, "blast", "-i", out, "-p", path, "-s", sym, "--format", "json", "-l", "1"],
                                capture_output=True, text=True)
             blast[f"{path}::{sym}"] = json.loads(r.stdout)["summary"].get("total", 0)
+        ambiguous = None  # only 0.4.1 and later log it
+        dbg = subprocess.run([binary, "build", "-r", root, "-o", out + "-dbg"], capture_output=True, text=True,
+                             env={**os.environ, "PROJECT_MAP_LOG": "debug"})
+        shutil.rmtree(out + "-dbg", ignore_errors=True)
+        for line in dbg.stderr.splitlines():
+            if "left unlinked by an ambiguous suffix match:" in line:
+                ambiguous = int(line.rsplit(":", 1)[1])
         return {
+            "ambiguous": ambiguous,
             "edges": len(idx["edges"]), "imports_edges": imp,
             "resolved": sum(1 for i in ent if i["resolved"]), "unresolved": sum(1 for i in ent if not i["resolved"]),
             "blast": blast, "seconds": round(secs, 3),
@@ -61,7 +69,7 @@ def one_build(root, symbols):
 result = {"label": label, "binary": binary, "runs": runs, "repos": {}}
 for name, (root, symbols) in REPOS.items():
     builds = [one_build(root, symbols) for _ in range(runs)]
-    keys = ["edges", "imports_edges", "resolved", "unresolved"]
+    keys = ["edges", "imports_edges", "resolved", "unresolved", "ambiguous"]
     spread = {k: sorted({b[k] for b in builds}) for k in keys}
     spread["blast"] = {s: sorted({b["blast"][s] for b in builds}) for s in builds[0]["blast"]}
     result["repos"][name] = {

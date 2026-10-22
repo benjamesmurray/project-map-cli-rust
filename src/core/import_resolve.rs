@@ -5,7 +5,7 @@
 //! suffixes, and every candidate is considered, so the result does not depend on any iteration
 //! order.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The outcome of resolving one import against the known file FQNs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,41 +34,86 @@ fn rank(import: &[&str], fqn: &[&str]) -> Option<Rank> {
     None
 }
 
-/// Picks the file FQN an import refers to when no exact or path match exists.
-///
-/// Tiers, best first, all on whole dot-separated segments:
-/// 1. the FQN ends with the import's segments;
-/// 2. the import starts with the FQN's segments (a member imported from a module);
-/// 3. both have at least two segments and their last two segments are equal.
-///
-/// Within a tier, fewer extra leading segments wins. A remaining tie is `Ambiguous`.
-pub fn resolve_by_suffix(import: &str, fqns: &BTreeSet<String>) -> SuffixResolution {
-    let import_segs: Vec<&str> = import.split('.').collect();
-    if import.is_empty() || import_segs.iter().any(|s| s.is_empty()) {
-        return SuffixResolution::None;
+/// The file FQNs indexed by first and last segment, so one import is compared with the few
+/// FQNs that can match it instead of with every file. Candidates are visited in sorted order.
+pub struct SuffixIndex {
+    /// last segment -> FQNs ending in it (tiers 1 and 3 need an equal last segment)
+    by_last: BTreeMap<String, Vec<String>>,
+    /// first segment -> FQNs starting with it (tier 2 needs an equal first segment)
+    by_first: BTreeMap<String, Vec<String>>,
+}
+
+impl SuffixIndex {
+    pub fn new(fqns: &BTreeSet<String>) -> Self {
+        let mut by_last: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut by_first: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for fqn in fqns {
+            let first = fqn.split('.').next().unwrap_or_default();
+            let last = fqn.rsplit('.').next().unwrap_or_default();
+            by_last
+                .entry(last.to_string())
+                .or_default()
+                .push(fqn.clone());
+            by_first
+                .entry(first.to_string())
+                .or_default()
+                .push(fqn.clone());
+        }
+        Self { by_last, by_first }
     }
-    let mut best: Option<Rank> = None;
-    let mut winners: Vec<&String> = Vec::new();
-    for fqn in fqns {
-        let segs: Vec<&str> = fqn.split('.').collect();
-        let Some(r) = rank(&import_segs, &segs) else {
-            continue;
-        };
-        match best {
-            Some(b) if r > b => {}
-            Some(b) if r == b => winners.push(fqn),
-            _ => {
-                best = Some(r);
-                winners.clear();
-                winners.push(fqn);
+
+    /// Picks the file FQN an import refers to when no exact or path match exists.
+    ///
+    /// Tiers, best first, all on whole dot-separated segments:
+    /// 1. the FQN ends with the import's segments;
+    /// 2. the import starts with the FQN's segments (a member imported from a module);
+    /// 3. both have at least two segments and their last two segments are equal.
+    ///
+    /// Within a tier, fewer extra leading segments wins. A remaining tie is `Ambiguous`.
+    pub fn resolve(&self, import: &str) -> SuffixResolution {
+        let import_segs: Vec<&str> = import.split('.').collect();
+        if import.is_empty() || import_segs.iter().any(|s| s.is_empty()) {
+            return SuffixResolution::None;
+        }
+        let (first, last) = (import_segs[0], import_segs[import_segs.len() - 1]);
+        // A candidate may be in both lists; ranking it twice is harmless because winners
+        // are deduplicated below.
+        let candidates = self
+            .by_last
+            .get(last)
+            .into_iter()
+            .chain(self.by_first.get(first))
+            .flatten();
+        let mut best: Option<Rank> = None;
+        let mut winners: BTreeSet<&String> = BTreeSet::new();
+        for fqn in candidates {
+            let segs: Vec<&str> = fqn.split('.').collect();
+            let Some(r) = rank(&import_segs, &segs) else {
+                continue;
+            };
+            match best {
+                Some(b) if r > b => {}
+                Some(b) if r == b => {
+                    winners.insert(fqn);
+                }
+                _ => {
+                    best = Some(r);
+                    winners.clear();
+                    winners.insert(fqn);
+                }
             }
         }
+        match winners.len() {
+            0 => SuffixResolution::None,
+            1 => SuffixResolution::Unique(winners.into_iter().next().unwrap().clone()),
+            _ => SuffixResolution::Ambiguous(winners.into_iter().cloned().collect()),
+        }
     }
-    match winners.len() {
-        0 => SuffixResolution::None,
-        1 => SuffixResolution::Unique(winners[0].clone()),
-        _ => SuffixResolution::Ambiguous(winners.into_iter().cloned().collect()),
-    }
+}
+
+/// One-off form of [`SuffixIndex::resolve`]; build a [`SuffixIndex`] to resolve many imports.
+pub fn resolve_by_suffix(import: &str, fqns: &BTreeSet<String>) -> SuffixResolution {
+    SuffixIndex::new(fqns).resolve(import)
 }
 
 #[cfg(test)]
@@ -181,5 +226,55 @@ mod tests {
         let a = set(&["x.m", "y.m", "z.w.m"]);
         let b = set(&["z.w.m", "y.m", "x.m"]);
         assert_eq!(resolve_by_suffix("m", &a), resolve_by_suffix("m", &b));
+    }
+
+    /// The indexed lookup agrees with ranking every FQN, over every short name on a small alphabet.
+    #[test]
+    fn index_agrees_with_ranking_every_fqn() {
+        fn names(max_len: usize) -> Vec<String> {
+            let mut all = Vec::new();
+            let mut layer: Vec<String> = vec![String::new()];
+            for _ in 0..max_len {
+                layer = layer
+                    .iter()
+                    .flat_map(|p| {
+                        ["a", "b", "c"].map(|seg| {
+                            if p.is_empty() {
+                                seg.to_string()
+                            } else {
+                                format!("{p}.{seg}")
+                            }
+                        })
+                    })
+                    .collect();
+                all.extend(layer.iter().cloned());
+            }
+            all
+        }
+        let fqns: BTreeSet<String> = names(3).into_iter().step_by(2).collect();
+        let index = SuffixIndex::new(&fqns);
+        for import in names(4) {
+            let segs: Vec<&str> = import.split('.').collect();
+            let mut best: Option<Rank> = None;
+            let mut winners: Vec<String> = Vec::new();
+            for fqn in &fqns {
+                let f: Vec<&str> = fqn.split('.').collect();
+                if let Some(r) = rank(&segs, &f) {
+                    if best.is_none_or(|b| r < b) {
+                        best = Some(r);
+                        winners.clear();
+                    }
+                    if best == Some(r) {
+                        winners.push(fqn.clone());
+                    }
+                }
+            }
+            let expected = match winners.len() {
+                0 => SuffixResolution::None,
+                1 => SuffixResolution::Unique(winners.remove(0)),
+                _ => SuffixResolution::Ambiguous(winners),
+            };
+            assert_eq!(index.resolve(&import), expected, "{import}");
+        }
     }
 }
