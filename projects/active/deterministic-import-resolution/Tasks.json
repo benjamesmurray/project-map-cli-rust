@@ -105,7 +105,7 @@
       "id": "3.2",
       "title": "Phase 3: README, CHANGELOG and Version",
       "description": "README: import resolution (strategies 1-3, segment-based tiers, ties left unlinked), the determinism guarantee (same tree gives the same graph and index bytes apart from build fields), and the imports package-name note (Python packages are their first segment: imports google, not google.*; the prefix form is for scoped JS packages). CHANGELOG 0.4.1 under Fixed: nondeterministic import resolution, raw-string suffix matches, sorted walk; note that Imports edges and blast_radius results change. Bump Cargo.toml to 0.4.1; cargo publish --dry-run passes on a clean tree.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "3.1"
       ]
@@ -114,7 +114,7 @@
       "id": "3.3",
       "title": "Phase 3: Hand-Off Note and Release Prep",
       "description": "Write projects/active/deterministic-import-resolution/reports/ost-manager-handoff.md: what 0.4.1 fixes, the OST-Manager before/after numbers, and the proposed OST-Manager ROADMAP lines (P4 row: project-map 0.4.1 released; P5 gate: released in project-map >= 0.4.1). Do not edit the OST-Manager repository. Run the phase gate checks, commit and push, then STOP: tagging, publishing and installing wait for the owner's go-ahead.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "3.2"
       ]
