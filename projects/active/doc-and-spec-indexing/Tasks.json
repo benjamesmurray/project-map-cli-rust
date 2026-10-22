@@ -336,7 +336,7 @@
       "id": "8.2",
       "title": "Phase 8: Stop Version Strings Becoming Kafka Topics",
       "description": "Non-gating follow-up. is_kafka_topic_string (src/core/parser.rs) accepts version strings such as 3.0.0, which become KafkaTopic nodes (FIXTURE_MAP currently records '3.0.0 kafka_topic 4' as verified against 0.2.0). Reject strings that are purely dotted numeric (optionally with a leading v or a pre-release suffix) while keeping real topic names. Unit tests for rejected versions and accepted topics; update the FIXTURE_MAP snapshot and note the behaviour change in CHANGELOG. cargo test, fmt and clippy pass.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "8.1"
       ]

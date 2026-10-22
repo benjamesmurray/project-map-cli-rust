@@ -24,6 +24,8 @@ After installing 0.3.0, **restart every running `project-map-cli-rust mcp` proce
 - All 13 MCP tool descriptions now say what question each tool answers better than grep. Tool names, parameters and output are unchanged (the existing seven tools' parameter schemas are snapshot-tested).
 - An index with schema version below 3, or with no metadata, is loaded read-only: it is reported as stale and never rewritten by a query.
 - A build refuses to overwrite an index with a newer `schema_version` (`AppError::NewerIndex`); the watcher logs it and skips the rebuild.
+- Version strings such as `3.0.0`, `v1.2` or `1.0.0-rc1` are no longer indexed as Kafka topics (YAML, config and code string literals). Topic names with digits, such as `orders.v1` or `events.2024.audit`, are unchanged.
+- Generic YAML key symbols now report their own line and byte range; a key repeated under several parents (or named like a comment or a longer key) no longer takes the location of its first text match.
 - Existing code tools (`query`, `search`, `plan`, `blast_radius`, `fetch_symbol`, symbol counts) skip documentation and API nodes. File outlines no longer list a document's references to code.
 
 ### Performance

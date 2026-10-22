@@ -95,8 +95,9 @@ config 6 (re-checked against the 0.2.0 binary in 3.3). 3.3 left this
 unchanged. Note: the 0.2.0 YAML extractor located keys by first text
 match, so some lines were wrong (openapi at line 1 matched the comment).
 Task 8.1 fixed that: openapi is now at its real line 4 (symbols sort
-service 2, name 3, 3.0.0 4, openapi 4, database 5, url 6). Version strings
-like 3.0.0 also pass the Kafka topic heuristic (task 8.2). 0.2.0 also gave openapi.yaml
+service 2, name 3, 3.0.0 4, openapi 4, database 5, url 6). Task 8.2 then
+stopped version strings like 3.0.0 becoming kafka_topic nodes, so the
+current symbols are service 2, name 3, openapi 4, database 5, url 6. 0.2.0 also gave openapi.yaml
 21 generic symbols and 2 such topics; 3.3 removes them.
 
 Phase 4 results (hand-counted; asserted in tests/docs_index_test.rs)

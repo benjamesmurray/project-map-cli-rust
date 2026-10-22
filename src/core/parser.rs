@@ -1012,6 +1012,9 @@ pub fn is_kafka_topic_string(s: &str) -> bool {
     {
         return false;
     }
+    if is_version_string(s) {
+        return false;
+    }
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() >= 2 {
         let all_valid = parts.iter().all(|p| {
@@ -1037,6 +1040,21 @@ pub fn is_kafka_topic_string(s: &str) -> bool {
         }
     }
     false
+}
+
+/// A dotted numeric version such as `3.0.0`, with an optional leading `v` and
+/// pre-release or build suffix (`v1.2`, `1.0.0-rc1`, `2.4.1+build5`).
+fn is_version_string(s: &str) -> bool {
+    let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
+    let core = s.split(['-', '+']).next().unwrap_or(s);
+    let mut segments = 0;
+    for part in core.split('.') {
+        if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+        segments += 1;
+    }
+    segments >= 2
 }
 
 pub fn classify_kafka_role(context: &str) -> String {
@@ -1088,6 +1106,53 @@ mod tests {
         assert!(!is_kafka_topic_string("simple_word"));
         assert!(!is_kafka_topic_string("path/to/file.kt"));
         assert!(!is_kafka_topic_string("foo.rs"));
+    }
+
+    #[test]
+    fn test_version_strings_are_not_kafka_topics() {
+        for version in [
+            "3.0.0",
+            "3.8",
+            "1.2.3.4",
+            "v1.2",
+            "V2.0.1",
+            "1.0.0-rc1",
+            "2.4.1-beta.2",
+            "2.4.1+build5",
+            "'3.0.0'",
+        ] {
+            assert!(!is_kafka_topic_string(version), "{version}");
+        }
+        // Real topic names, including ones that contain digits, stay topics.
+        for topic in [
+            "orders.v1",
+            "wde.bars.raw.v5",
+            "com.example.service",
+            "events.2024.audit",
+            "v1.orders.created",
+            "wde.1.2",
+        ] {
+            assert!(is_kafka_topic_string(topic), "{topic}");
+        }
+    }
+
+    #[test]
+    fn test_version_strings_do_not_become_kafka_nodes_in_yaml() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("app.yml");
+        std::fs::write(
+            &path,
+            "version: 3.0.0\nimage: \"v2.1.0\"\nservice:\n  output-topic: orders.v1\n",
+        )
+        .unwrap();
+        let outline = CodeParser::new().parse_yaml_file(&path).unwrap();
+        let topics: Vec<_> = outline
+            .symbols
+            .iter()
+            .filter(|s| s.kind == "kafka_topic")
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(topics, vec!["orders.v1"]);
     }
 
     #[test]
@@ -1241,13 +1306,12 @@ services:
     #[test]
     fn test_non_openapi_yaml_unchanged() {
         // Snapshot of the 0.2.0 output (FIXTURE_MAP.txt) with 'openapi' at its real
-        // line (4; 0.2.0 matched the comment on line 1), and the version still read
-        // as a Kafka topic (task 8.2).
+        // line (4; 0.2.0 matched the comment on line 1), and the version `3.0.0`
+        // no longer read as a Kafka topic (task 8.2).
         let got = yaml_fixture_symbols("tests/fixtures/docs/config/settings.yaml");
         let want: Vec<_> = [
             ("service", "config", 2),
             ("name", "config", 3),
-            ("3.0.0", "kafka_topic", 4),
             ("openapi", "config", 4),
             ("database", "config", 5),
             ("url", "config", 6),
