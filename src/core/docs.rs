@@ -2,6 +2,9 @@ use crate::core::graph::DocMeta;
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 use serde_yaml::Value;
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::Read;
+use std::path::Path;
 
 /// Everything the doc pass extracts from one Markdown file.
 /// Byte offsets and lines are relative to the original file, frontmatter included.
@@ -667,6 +670,311 @@ impl Slugger {
     }
 }
 
+/// Files larger than this are only OpenAPI if their name says so; they are never sniffed.
+pub const OPENAPI_SNIFF_MAX_SIZE: u64 = 1024 * 1024;
+/// How much of a file the content sniff looks at.
+pub const OPENAPI_HEAD_LEN: usize = 1024;
+
+const HTTP_METHODS: [&str; 8] = [
+    "get", "put", "post", "delete", "options", "head", "patch", "trace",
+];
+
+/// Operations and schemas of one OpenAPI 3 or Swagger 2 document, in document order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ApiOutline {
+    pub operations: Vec<ApiOperation>,
+    pub schemas: Vec<ApiSchema>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiOperation {
+    /// Upper case, e.g. `GET`.
+    pub method: String,
+    pub path: String,
+    pub operation_id: Option<String>,
+    pub summary: Option<String>,
+    pub location: ApiLocation,
+}
+
+impl ApiOperation {
+    /// `METHOD /path`, the node name.
+    pub fn name(&self) -> String {
+        format!("{} {}", self.method, self.path)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiSchema {
+    pub name: String,
+    pub location: ApiLocation,
+}
+
+/// Where a method or schema key is written: its 1-based line, and bytes from the
+/// key to the end of that line. Values carry no spans, so keys are found by text
+/// search; a key that cannot be found keeps the file start (line 1, bytes 0..0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApiLocation {
+    pub line: usize,
+    pub start_byte: usize,
+    pub end_byte: usize,
+}
+
+impl Default for ApiLocation {
+    fn default() -> Self {
+        Self {
+            line: 1,
+            start_byte: 0,
+            end_byte: 0,
+        }
+    }
+}
+
+/// `yaml`, `yml` or `json`, the only extensions an OpenAPI spec can have here.
+fn api_extension(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "yaml" => Some("yaml"),
+        "yml" => Some("yml"),
+        "json" => Some("json"),
+        _ => None,
+    }
+}
+
+/// True if `path` is named `openapi.{yaml,yml,json}` or `swagger.{yaml,yml,json}`,
+/// or is a YAML/JSON file of at most 1 MB whose first 1 KB (`head`, after a BOM)
+/// has a top-level `openapi` or `swagger` key. `head` is ignored for larger files.
+pub fn is_openapi(path: &Path, head: &[u8], size: u64) -> bool {
+    let Some(ext) = api_extension(path) else {
+        return false;
+    };
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name == "openapi" || name == "swagger" {
+        return true;
+    }
+    if size > OPENAPI_SNIFF_MAX_SIZE {
+        return false;
+    }
+    let head = &head[..head.len().min(OPENAPI_HEAD_LEN)];
+    let head = head.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(head);
+    let is_flow = head.trim_ascii_start().starts_with(b"{");
+    if ext == "json" || is_flow {
+        json_has_top_level_key(head)
+    } else {
+        yaml_has_top_level_key(head)
+    }
+}
+
+/// `is_openapi` for a file on disk, reading at most `OPENAPI_HEAD_LEN` bytes.
+pub fn is_openapi_file(path: &Path) -> bool {
+    if api_extension(path).is_none() {
+        return false;
+    }
+    let Ok(size) = fs::metadata(path).map(|m| m.len()) else {
+        return false;
+    };
+    let mut head = Vec::with_capacity(OPENAPI_HEAD_LEN);
+    if size <= OPENAPI_SNIFF_MAX_SIZE {
+        let read = fs::File::open(path)
+            .and_then(|f| f.take(OPENAPI_HEAD_LEN as u64).read_to_end(&mut head));
+        if read.is_err() {
+            return false;
+        }
+    }
+    is_openapi(path, &head, size)
+}
+
+fn is_api_key(key: &[u8]) -> bool {
+    key == b"openapi" || key == b"swagger"
+}
+
+/// A line starting at column 0 with `openapi:` or `swagger:`, the key optionally
+/// quoted. Comments and indented (nested) keys never match.
+fn yaml_has_top_level_key(head: &[u8]) -> bool {
+    head.split(|&b| b == b'\n').any(|line| {
+        let (key, rest) = match line.first() {
+            Some(&q @ (b'"' | b'\'')) => match line[1..].iter().position(|&b| b == q) {
+                Some(end) => (&line[1..end + 1], &line[end + 2..]),
+                None => return false,
+            },
+            _ => {
+                let end = line
+                    .iter()
+                    .position(|&b| b == b':' || b == b' ')
+                    .unwrap_or(line.len());
+                (&line[..end], &line[end..])
+            }
+        };
+        is_api_key(key) && rest.trim_ascii_start().starts_with(b":")
+    })
+}
+
+/// A key of the outermost JSON object named `openapi` or `swagger`; strings are
+/// skipped with their escapes so braces inside them do not change the depth.
+fn json_has_top_level_key(head: &[u8]) -> bool {
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < head.len() {
+        match head[i] {
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b'"' => {
+                let start = i + 1;
+                let mut j = start;
+                while j < head.len() && head[j] != b'"' {
+                    j += if head[j] == b'\\' { 2 } else { 1 };
+                }
+                if j >= head.len() {
+                    return false;
+                }
+                if depth == 1
+                    && is_api_key(&head[start..j])
+                    && head[j + 1..].trim_ascii_start().starts_with(b":")
+                {
+                    return true;
+                }
+                i = j;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Operations and schemas of a parsed OpenAPI 3 / Swagger 2 document, or `None`
+/// unless it is a mapping with a top-level `openapi` or `swagger` key. Locations
+/// are left at the file start; `parse_openapi_text` fills them in.
+pub fn parse_openapi(value: &Value) -> Option<ApiOutline> {
+    let Value::Mapping(doc) = value else {
+        return None;
+    };
+    if !doc.contains_key("openapi") && !doc.contains_key("swagger") {
+        return None;
+    }
+    let text = |v: Option<&Value>| v.and_then(Value::as_str).map(str::to_string);
+
+    let mut outline = ApiOutline::default();
+    if let Some(Value::Mapping(paths)) = doc.get("paths") {
+        for (path, item) in paths {
+            let (Some(path), Value::Mapping(item)) = (path.as_str(), item) else {
+                continue;
+            };
+            for (method, op) in item {
+                let Some(method) = method.as_str().filter(|m| HTTP_METHODS.contains(m)) else {
+                    continue;
+                };
+                outline.operations.push(ApiOperation {
+                    method: method.to_ascii_uppercase(),
+                    path: path.to_string(),
+                    operation_id: text(op.get("operationId")),
+                    summary: text(op.get("summary")),
+                    location: ApiLocation::default(),
+                });
+            }
+        }
+    }
+    let schema_tables = [
+        doc.get("components").and_then(|c| c.get("schemas")),
+        doc.get("definitions"),
+    ];
+    for table in schema_tables.into_iter().flatten() {
+        if let Value::Mapping(schemas) = table {
+            outline
+                .schemas
+                .extend(
+                    schemas
+                        .keys()
+                        .filter_map(Value::as_str)
+                        .map(|name| ApiSchema {
+                            name: name.to_string(),
+                            location: ApiLocation::default(),
+                        }),
+                );
+        }
+    }
+    Some(outline)
+}
+
+/// Parses YAML or JSON (by extension) and extracts the API outline with locations.
+pub fn parse_openapi_text(path: &Path, text: &str) -> Option<ApiOutline> {
+    let body = text.trim_start_matches('\u{feff}');
+    let value: Value = if api_extension(path)? == "json" {
+        serde_json::from_str(body).ok()?
+    } else {
+        serde_yaml::from_str(body).ok()?
+    };
+    let mut outline = parse_openapi(&value)?;
+    locate_api_keys(&mut outline, text);
+    Some(outline)
+}
+
+/// Finds each method key after its path key inside `paths`, and each schema key
+/// after `schemas` / `definitions`.
+fn locate_api_keys(outline: &mut ApiOutline, text: &str) {
+    let line_starts = line_starts(text);
+    let locate = |at: usize| ApiLocation {
+        line: line_of(&line_starts, at),
+        start_byte: at,
+        end_byte: text[at..].find('\n').map_or(text.len(), |n| at + n),
+    };
+    let paths_at = find_key(text, 0, "paths").unwrap_or(0);
+    for op in &mut outline.operations {
+        let method = op.method.to_ascii_lowercase();
+        if let Some(at) =
+            find_key(text, paths_at, &op.path).and_then(|path_at| find_key(text, path_at, &method))
+        {
+            op.location = locate(at);
+        }
+    }
+    let tables = [
+        find_key(text, 0, "schemas"),
+        find_key(text, 0, "definitions"),
+    ];
+    for schema in &mut outline.schemas {
+        if let Some(at) = tables
+            .iter()
+            .flatten()
+            .find_map(|&from| find_key(text, from, &schema.name))
+        {
+            schema.location = locate(at);
+        }
+    }
+}
+
+/// Byte of the first `key:` / `"key":` / `'key':` at or after `from` that is a
+/// whole key: preceded by whitespace, `{`, `,` or the start, and followed by ':'.
+fn find_key(text: &str, from: usize, key: &str) -> Option<usize> {
+    let mut search = from;
+    while let Some(rel) = text.get(search..)?.find(key) {
+        let at = search + rel;
+        search = at + key.len();
+        let quote = text[..at]
+            .chars()
+            .next_back()
+            .filter(|c| matches!(c, '"' | '\''));
+        let key_start = at - quote.map_or(0, char::len_utf8);
+        let boundary = text[..key_start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| c.is_whitespace() || matches!(c, '{' | ','));
+        let rest = &text[search..];
+        let rest = match quote {
+            Some(q) => match rest.strip_prefix(q) {
+                Some(r) => r,
+                None => continue,
+            },
+            None => rest,
+        };
+        if boundary && rest.trim_start_matches([' ', '\t']).starts_with(':') {
+            return Some(key_start);
+        }
+    }
+    None
+}
+
 fn line_starts(text: &str) -> Vec<usize> {
     std::iter::once(0)
         .chain(text.match_indices('\n').map(|(i, _)| i + 1))
@@ -1250,5 +1558,255 @@ mod tests {
         );
         // A code span breaks a run.
         assert_eq!(terms_of("Audit `x` Service.\n"), Vec::<String>::new());
+    }
+
+    const API_DIR: &str = "tests/fixtures/docs/api";
+
+    fn fixture(rel: &str) -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+    }
+
+    #[test]
+    fn test_openapi_detection_fixtures() {
+        for name in [
+            "openapi.yaml",
+            "swagger.json",
+            "billing-api.yml",
+            "empty-openapi.json",
+        ] {
+            assert!(
+                is_openapi_file(&fixture(&format!("{API_DIR}/{name}"))),
+                "{name}"
+            );
+        }
+        assert!(!is_openapi_file(&fixture(
+            "tests/fixtures/docs/config/settings.yaml"
+        )));
+        assert!(!is_openapi_file(&fixture(
+            "tests/fixtures/docs/docs/guide.md"
+        )));
+        assert!(!is_openapi_file(&fixture(
+            "tests/fixtures/docs/missing.yaml"
+        )));
+    }
+
+    #[test]
+    fn test_openapi_detection_by_name_and_content() {
+        let p = Path::new;
+        // By name, whatever the content; case-insensitive; only YAML/JSON.
+        assert!(is_openapi(p("a/OpenAPI.YML"), b"", 0));
+        assert!(is_openapi(
+            p("swagger.yaml"),
+            b"",
+            10 * OPENAPI_SNIFF_MAX_SIZE
+        ));
+        assert!(!is_openapi(p("openapi.md"), b"openapi: 3", 10));
+        assert!(!is_openapi(p("my-openapi.yaml"), b"x: 1", 4));
+
+        let yaml = |head: &str| is_openapi(p("api.yaml"), head.as_bytes(), head.len() as u64);
+        assert!(yaml("# c\n\nopenapi: 3.0.0\n"));
+        assert!(yaml("\u{feff}swagger: '2.0'\n"));
+        assert!(yaml("\"openapi\": 3.1.0\n"));
+        assert!(yaml("info:\n  title: x\nopenapi : 3\n"));
+        assert!(!yaml("service:\n  openapi: 3.0.0\n"), "nested key");
+        assert!(!yaml("# openapi: 3.0.0\n"), "comment");
+        assert!(!yaml("openapi_version: 3\n"));
+        assert!(!yaml("openapi\n"));
+        assert!(
+            yaml("{ \"openapi\": \"3.0.0\" }"),
+            "flow mapping in a .yaml file"
+        );
+
+        let json = |head: &str| is_openapi(p("api.json"), head.as_bytes(), head.len() as u64);
+        assert!(json("{\"info\": {\"t\": \"{\"}, \"openapi\": \"3\"}"));
+        assert!(json("\u{feff}  {\n  \"swagger\" : \"2.0\"}"));
+        assert!(!json("{\"info\": {\"openapi\": \"3\"}}"), "nested key");
+        assert!(!json("[\"openapi\", \"swagger\"]"), "values, not keys");
+        assert!(!json("{\"name\": \"openapi\"}"));
+        assert!(!json("{\"x\": \"a \\\" openapi\": 1}"), "escaped quote");
+
+        // Only the first 1 KB counts.
+        let late = format!("{}openapi: 3\n", "# pad\n".repeat(200));
+        assert!(!yaml(&late));
+    }
+
+    #[test]
+    fn test_openapi_detection_skips_large_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("big.json");
+        let body = format!(
+            "{{\"openapi\": \"3.0.0\", \"pad\": \"{}\"}}",
+            "x".repeat(OPENAPI_SNIFF_MAX_SIZE as usize)
+        );
+        fs::write(&big, &body).unwrap();
+        let size = fs::metadata(&big).unwrap().len();
+        assert!(size > OPENAPI_SNIFF_MAX_SIZE);
+
+        // The head alone would match; the size gate says no.
+        let head = &body.as_bytes()[..OPENAPI_HEAD_LEN];
+        assert!(is_openapi(
+            Path::new("small.json"),
+            head,
+            OPENAPI_HEAD_LEN as u64
+        ));
+        assert!(!is_openapi(&big, head, size));
+        assert!(!is_openapi_file(&big));
+
+        // Named specs are detected at any size.
+        let named = dir.path().join("openapi.json");
+        fs::rename(&big, &named).unwrap();
+        assert!(is_openapi_file(&named));
+    }
+
+    /// (name, operationId, summary, line) per operation; (name, line) per schema.
+    type OpRow = (String, Option<String>, Option<String>, usize);
+
+    fn api_summary(rel: &str) -> (Vec<OpRow>, Vec<(String, usize)>) {
+        let path = fixture(&format!("{API_DIR}/{rel}"));
+        let text = fs::read_to_string(&path).unwrap();
+        let outline = parse_openapi_text(&path, &text).unwrap();
+        for op in &outline.operations {
+            let key = &text[op.location.start_byte..op.location.end_byte];
+            assert!(
+                key.trim_start_matches('"')
+                    .starts_with(&op.method.to_ascii_lowercase()),
+                "{op:?} located at {key:?}"
+            );
+        }
+        (
+            outline
+                .operations
+                .iter()
+                .map(|o| {
+                    (
+                        o.name(),
+                        o.operation_id.clone(),
+                        o.summary.clone(),
+                        o.location.line,
+                    )
+                })
+                .collect(),
+            outline
+                .schemas
+                .iter()
+                .map(|s| (s.name.clone(), s.location.line))
+                .collect(),
+        )
+    }
+
+    fn op(name: &str, id: Option<&str>, summary: Option<&str>, line: usize) -> OpRow {
+        (
+            name.into(),
+            id.map(Into::into),
+            summary.map(Into::into),
+            line,
+        )
+    }
+
+    #[test]
+    fn test_openapi3_yaml_extraction() {
+        let (ops, schemas) = api_summary("openapi.yaml");
+        assert_eq!(
+            ops,
+            vec![
+                op(
+                    "GET /entries",
+                    Some("listEntries"),
+                    Some("List audit entries"),
+                    10
+                ),
+                op(
+                    "POST /entries",
+                    Some("appendEntry"),
+                    Some("Append an audit entry"),
+                    13
+                ),
+                op("GET /entries/{id}", Some("getEntry"), None, 17),
+            ],
+            "parameters and $ref are not operations"
+        );
+        assert_eq!(
+            schemas,
+            vec![("AuditEntry".into(), 22), ("AuditPage".into(), 24)]
+        );
+
+        let (ops, schemas) = api_summary("billing-api.yml");
+        assert_eq!(
+            ops,
+            vec![
+                op(
+                    "PATCH /retention",
+                    Some("setRetention"),
+                    Some("Change the retention window"),
+                    9
+                ),
+                op("TRACE /retention", None, Some("Trace retention"), 12),
+            ]
+        );
+        assert!(schemas.is_empty());
+    }
+
+    #[test]
+    fn test_swagger2_json_extraction() {
+        let (ops, schemas) = api_summary("swagger.json");
+        assert_eq!(
+            ops,
+            vec![
+                op(
+                    "GET /invoices",
+                    Some("listInvoices"),
+                    Some("List invoices"),
+                    6
+                ),
+                op("PUT /invoices", None, Some("Replace invoices"), 7),
+                op("DELETE /invoices/{id}", Some("deleteInvoice"), None, 10),
+            ]
+        );
+        assert_eq!(schemas, vec![("Invoice".into(), 14)]);
+
+        let (ops, schemas) = api_summary("empty-openapi.json");
+        assert!(ops.is_empty() && schemas.is_empty());
+    }
+
+    #[test]
+    fn test_parse_openapi_rejects_non_specs() {
+        let yaml = |s: &str| serde_yaml::from_str::<Value>(s).unwrap();
+        assert_eq!(parse_openapi(&yaml("service:\n  openapi: 3\n")), None);
+        assert_eq!(parse_openapi(&yaml("- openapi\n")), None);
+        assert_eq!(
+            parse_openapi_text(Path::new("openapi.yaml"), "openapi: [unclosed"),
+            None
+        );
+        assert_eq!(
+            parse_openapi_text(Path::new("openapi.json"), "{\"openapi\": "),
+            None
+        );
+        assert_eq!(
+            parse_openapi_text(Path::new("openapi.toml"), "openapi = 3"),
+            None
+        );
+
+        // Upper-case or unknown method keys and non-mapping path items are skipped;
+        // an unlocatable key keeps the file start.
+        let outline = parse_openapi(&yaml(
+            "openapi: 3\npaths:\n  /a:\n    GET: {}\n    servers: []\n    get: {}\n  /b: []\n",
+        ))
+        .unwrap();
+        let names: Vec<_> = outline.operations.iter().map(ApiOperation::name).collect();
+        assert_eq!(names, vec!["GET /a"]);
+        assert_eq!(outline.operations[0].location, ApiLocation::default());
+    }
+
+    #[test]
+    fn test_find_key() {
+        let text = "target: 1\nx:\n  get : 2\n  \"get\": 3\n";
+        assert_eq!(find_key(text, 0, "get"), Some(text.find("get :").unwrap()));
+        let after = text.find("get :").unwrap() + 1;
+        assert_eq!(
+            find_key(text, after, "get"),
+            Some(text.find("\"get\"").unwrap())
+        );
+        assert_eq!(find_key("/a/b: 1\n/a: 2\n", 0, "/a"), Some(8));
+        assert_eq!(find_key("x: get\n", 0, "get"), None);
     }
 }

@@ -91,7 +91,7 @@
       "id": "3.1",
       "title": "Phase 3: OpenAPI Detection",
       "description": "docs::is_openapi(path, head_bytes, size): true if the file name is openapi.yaml/yml/json or swagger.* ; otherwise for .yaml/.yml/.json files of at most 1 MB, look at the first 1 KB after a BOM, whitespace and YAML comments for a top-level openapi or swagger key (YAML key at column 0, or JSON key at the top-level object). Files over 1 MB are never read beyond what the name check needs. Unit tests: each fixture positive, a non-OpenAPI YAML, a nested openapi key (negative), BOM-prefixed file, the runtime-generated >1 MB JSON returns false without a full read (assert via the head-bytes API, not by timing). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.2"
       ]
@@ -100,7 +100,7 @@
       "id": "3.2",
       "title": "Phase 3: OpenAPI Extraction",
       "description": "docs::parse_openapi(value) -> Option<ApiOutline> from serde_yaml / serde_json values (no full OpenAPI model). Operations: for each paths entry and each HTTP method key (get, put, post, delete, options, head, patch, trace), name 'METHOD /path', with operationId and summary when present, and line/byte location where obtainable (fall back to the file start; document). Schemas: components.schemas keys (OpenAPI 3) and definitions keys (Swagger 2). Ignore non-method path keys (parameters, servers, $ref). Unit tests on the YAML and JSON fixtures: exact operation list, operationId and summary, schema names, a spec with no paths. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "3.1"
       ]
@@ -109,7 +109,7 @@
       "id": "3.3",
       "title": "Phase 3: OpenAPI Files Skip Generic YAML Extraction",
       "description": "In src/core/parser.rs, when is_openapi is true for a YAML file, skip extract_yaml_symbols (and any generic JSON handling) so the file produces only the file node here; API nodes come from the doc pass in 4.1. Non-OpenAPI YAML is unchanged. Tests (Verification 2): indexing the fixture openapi.yaml yields zero generic YAML symbols for it; a non-OpenAPI YAML fixture yields the same symbols as before this change (compare against current output). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "3.1"
       ]
@@ -321,6 +321,33 @@
       "status": "pending",
       "dependencies": [
         "7.3"
+      ]
+    },
+    {
+      "id": "8.1",
+      "title": "Phase 8: Fix Generic YAML Key Line Location",
+      "description": "Non-gating follow-up, found in the 0.3.0 work and out of its scope. src/core/parser.rs extract_yaml_symbols locates keys by the first text match in the file, so a repeated key name reports the line of its first occurrence, not its own. Fix by tracking each key's real line (walk the text in step with the parsed structure, or use a position-aware YAML parse) so duplicated keys at different nesting levels get distinct, correct locations. Add a regression fixture with the same key under several parents. Existing snapshots that encode the wrong lines are corrected and the diff reviewed. cargo test, cargo fmt --check and cargo clippy --all-targets -- -D warnings pass.",
+      "status": "pending",
+      "dependencies": [
+        "7.4"
+      ]
+    },
+    {
+      "id": "8.2",
+      "title": "Phase 8: Stop Version Strings Becoming Kafka Topics",
+      "description": "Non-gating follow-up. is_kafka_topic_string (src/core/parser.rs) accepts version strings such as 3.0.0, which become KafkaTopic nodes (FIXTURE_MAP currently records '3.0.0 kafka_topic 4' as verified against 0.2.0). Reject strings that are purely dotted numeric (optionally with a leading v or a pre-release suffix) while keeping real topic names. Unit tests for rejected versions and accepted topics; update the FIXTURE_MAP snapshot and note the behaviour change in CHANGELOG. cargo test, fmt and clippy pass.",
+      "status": "pending",
+      "dependencies": [
+        "8.1"
+      ]
+    },
+    {
+      "id": "8.3",
+      "title": "Phase 8: Fix Index Swap When latest Is A Real Directory",
+      "description": "Non-gating follow-up. On Unix, replacing a real-directory .project-map/latest/ fails with EISDIR because the atomic swap assumes a symlink. Reproduce with a test that starts from a real directory (as written by older builds), then make the swap migrate it safely: move the old directory aside, install the new symlink atomically, and remove the old one, without leaving the index missing at any point readers could observe. Concurrent-watcher tests still pass; cargo test, fmt and clippy pass.",
+      "status": "pending",
+      "dependencies": [
+        "8.2"
       ]
     }
   ]

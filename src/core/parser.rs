@@ -1,3 +1,4 @@
+use crate::core::docs;
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -406,6 +407,18 @@ impl CodeParser {
     pub fn parse_yaml_file(&self, path: &Path) -> Result<FileOutline> {
         let content = fs::read_to_string(path)?;
         let mut symbols = Vec::new();
+
+        // API nodes for OpenAPI specs come from the doc pass; generic key symbols
+        // would index the spec a second time.
+        let head = &content.as_bytes()[..content.len().min(docs::OPENAPI_HEAD_LEN)];
+        if docs::is_openapi(path, head, content.len() as u64) {
+            return Ok(FileOutline {
+                path: path.to_string_lossy().to_string(),
+                language: "yaml".to_string(),
+                symbols,
+                imports: Vec::new(),
+            });
+        }
         let file_lines: Vec<&str> = content.lines().collect();
 
         let find_line_and_bytes = |target: &str| -> (usize, usize, usize) {
@@ -1132,6 +1145,43 @@ services:
             .unwrap();
         assert_eq!(in_topic.kind, "kafka_topic");
         assert_eq!(in_topic.role.as_deref(), Some("Consumer"));
+    }
+
+    fn yaml_fixture_symbols(rel: &str) -> Vec<(String, String, usize)> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+        CodeParser::new()
+            .parse_yaml_file(&path)
+            .unwrap()
+            .symbols
+            .into_iter()
+            .map(|s| (s.name, s.kind, s.line))
+            .collect()
+    }
+
+    #[test]
+    fn test_openapi_yaml_skips_generic_symbols() {
+        assert!(yaml_fixture_symbols("tests/fixtures/docs/api/openapi.yaml").is_empty());
+        assert!(yaml_fixture_symbols("tests/fixtures/docs/api/billing-api.yml").is_empty());
+    }
+
+    #[test]
+    fn test_non_openapi_yaml_unchanged() {
+        // Snapshot of the 0.2.0 output (FIXTURE_MAP.txt), including its first-text-match
+        // line for 'openapi' and the version read as a Kafka topic: existing bugs
+        // outside this feature.
+        let got = yaml_fixture_symbols("tests/fixtures/docs/config/settings.yaml");
+        let want: Vec<_> = [
+            ("openapi", "config", 1),
+            ("service", "config", 2),
+            ("name", "config", 3),
+            ("3.0.0", "kafka_topic", 4),
+            ("database", "config", 5),
+            ("url", "config", 6),
+        ]
+        .into_iter()
+        .map(|(n, k, l)| (n.to_string(), k.to_string(), l))
+        .collect();
+        assert_eq!(got, want);
     }
 
     #[test]

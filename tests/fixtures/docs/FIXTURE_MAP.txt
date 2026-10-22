@@ -90,7 +90,10 @@ config/settings.yaml    nested openapi key: NOT OpenAPI; keeps its generic
 Snapshot for 3.3 (0.2.0 output, generic YAML extraction)
 --------------------------------------------------------
 config/settings.yaml symbols (name kind line): openapi config 1, service
-config 2, name config 3, database config 5, url config 6. 3.3 must leave
-this unchanged. Note: the 0.2.0 YAML extractor locates keys by first text
+config 2, name config 3, 3.0.0 kafka_topic 4, database config 5, url
+config 6 (re-checked against the 0.2.0 binary in 3.3). 3.3 must leave this
+unchanged. Note: the 0.2.0 YAML extractor locates keys by first text
 match, so some lines are wrong (openapi at line 1 matches the comment).
-That is an existing bug, out of scope for this feature.
+Version strings like 3.0.0 also pass the Kafka topic heuristic. Both are
+existing bugs, out of scope for this feature. 0.2.0 also gave openapi.yaml
+21 generic symbols and 2 such topics; 3.3 removes them.
