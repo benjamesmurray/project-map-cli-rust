@@ -123,7 +123,7 @@
       "id": "3.4",
       "title": "Phase 3: Publish, Install and Archive (owner go-ahead)",
       "description": "After the owner says go: tag v0.4.1 and push it, cargo publish, cargo install project-map-cli-rust --version 0.4.1 --locked --force, confirm crates.io and the installed binary report 0.4.1, list running mcp processes for the owner to restart (then refresh each served repository), and archive the feature through the spec CLI once every task is completed.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "3.3"
       ]
