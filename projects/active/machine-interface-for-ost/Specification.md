@@ -330,7 +330,7 @@ On error the envelope has `"error": { "code": "...", "message": "..." }` and no 
 | `query` (path form) | `symbol`, `kind`, `line`, `end_line`, `role` and `path` (import entries only) | `path` |
 | `query` (filename form) | `path` | — |
 | `fetch_symbol` | — | `path`, `symbol`, `line`, `end_line`, `source` |
-| `blast_radius` | `symbol`, `kind`, `node_type`, `path`, `line`, `end_line`, `depth` | `target_path`, `target_symbol` (omitted when `matched` is `file`), `target_line`, `matched`, `direct`, `transitive`, `total`, `files_affected`, `languages` |
+| `blast_radius` | `symbol`, `kind`, `node_type`, `path`, `line`, `end_line`, `depth` | `target_path`, `target_symbol` (omitted when `matched` is `file`), `target_line`, `matched`, `via` (only when the target is nested in another symbol), `direct`, `transitive`, `total`, `files_affected`, `languages` |
 | `plan` | `symbol`, `kind`, `node_type`, `path`, `line`, `depth` | `requested`, `target_symbol`, `target_path`, `target_line` |
 | `doc_search` | `path`, `anchor`, `heading`, `level`, `line`, `score`, `snippet` | `query` |
 | `doc_outline` | `anchor`, `heading`, `level`, `depth`, `line`, `end_line` | `path`, `frontmatter` |
@@ -343,6 +343,8 @@ On error the envelope has `"error": { "code": "...", "message": "..." }` and no 
 | `init` | — | `status` (`refreshed` or `failed`), `message`, `commit`, `dirty` |
 
 Further rules:
+- A file node has no line: `line` and `end_line` (and `target_line`) are omitted for it, in `blast_radius`, `plan` and the path form of `query`.
+- `via` names the outermost symbol enclosing a `blast_radius` target that is nested in another symbol (a method). No import names a method, so the walk also starts from the enclosing symbols, and from same-named symbols in the file (the struct an `impl` block belongs to); the counts are then the type's and include importers that never use this method. A free function has no `via`.
 - Every list result also reports `truncated` and `total` in the envelope (the number of matches before any limit). In `status` the envelope's `truncated` says whether the tree was cut at `max_depth`.
 - In `blast_radius`, `direct`, `transitive`, `total`, `files_affected` and `languages` are always present (`0` / `[]` when nothing depends on the target), and every item has `depth`.
 - `symbol` is qualified when the symbol lies inside another symbol's range in the same file (`Graph.load`); otherwise it is the bare name. A Rust `impl Trait for Type` block is named after `Type`. Qualified names are **not unique** (two `impl From<…> for E` blocks both give `E.from`), so a citation needs `path` and `line` as well.

@@ -1,0 +1,25 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [],
+  "summary": {
+    "direct": 0,
+    "files_affected": 0,
+    "languages": [],
+    "matched": "symbol",
+    "target_line": 5,
+    "target_path": "rust_crate/src/user.rs",
+    "target_symbol": "sym_count",
+    "total": 0,
+    "transitive": 0
+  },
+  "tool": "blast_radius",
+  "total": 0,
+  "truncated": false
+}

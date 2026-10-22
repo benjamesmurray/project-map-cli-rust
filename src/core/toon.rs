@@ -216,6 +216,11 @@ impl ToonFormatter {
         radius: &BlastRadiusResult,
     ) -> String {
         let mut output = format!("Resource: Blast Radius | Symbol: {} in {}\n", symbol, path);
+        if let Some(via) = &radius.via {
+            output.push_str(&format!(
+                "Counted via enclosing symbol {via}: no import names a method.\n"
+            ));
+        }
 
         if results.is_empty() {
             output.push_str("No dependent components found.\n");

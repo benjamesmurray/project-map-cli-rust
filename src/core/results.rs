@@ -186,6 +186,11 @@ impl QualifiedNamer {
     }
 }
 
+/// A node's 1-based line, or `None` for a file node, which the index stores at line 0.
+pub fn line_of(line: usize) -> Option<usize> {
+    (line > 0).then_some(line)
+}
+
 /// 1-based last line of a node whose first line is `line`, read from the file text
 /// by the node's byte range. A trailing line break belongs to the last line. Falls
 /// back to `line` when the range does not fit `source` (the file changed).
@@ -234,7 +239,9 @@ pub struct EntityList {
 pub struct OutlineItem {
     pub symbol: String,
     pub kind: String,
-    pub line: usize,
+    /// Omitted for a file node, which has no line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -287,7 +294,9 @@ pub struct BlastItem {
     #[serde(serialize_with = "serialize_node_type")]
     pub node_type: NodeType,
     pub path: String,
-    pub line: usize,
+    /// Omitted for a file node, which has no line (and so no `end_line`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_line: Option<usize>,
     pub depth: usize,
@@ -305,6 +314,11 @@ pub struct BlastRadiusResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_line: Option<usize>,
     pub matched: BlastMatch,
+    /// Set when the target is nested in another symbol (a method): the outermost
+    /// enclosing symbol the counts were also taken from, because no import names a
+    /// method. The counts then include importers who never use this method.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
     /// Dependents at depth 1.
     pub direct: usize,
     /// Dependents at depth 2 or more.
@@ -326,7 +340,9 @@ pub struct PlanItem {
     #[serde(serialize_with = "serialize_node_type")]
     pub node_type: NodeType,
     pub path: String,
-    pub line: usize,
+    /// Omitted for a file node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
     /// Edges from the target (breadth-first, shortest).
     pub depth: usize,
 }
@@ -743,6 +759,7 @@ mod tests {
             target_symbol: None,
             target_line: None,
             matched: BlastMatch::File,
+            via: None,
             direct: 0,
             transitive: 0,
             total: 0,
@@ -761,6 +778,7 @@ mod tests {
             target_symbol: Some("load".into()),
             target_line: Some(4),
             matched: BlastMatch::Symbol,
+            via: None,
             direct: 1,
             transitive: 0,
             total: 1,

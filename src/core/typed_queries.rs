@@ -27,7 +27,15 @@ impl<'a> EndLines<'a> {
         }
     }
 
-    fn of(&mut self, node: &NodeData) -> usize {
+    /// `None` for a file node.
+    fn of(&mut self, node: &NodeData) -> Option<usize> {
+        if node.line == 0 {
+            return None;
+        }
+        Some(self.last_line(node))
+    }
+
+    fn last_line(&mut self, node: &NodeData) -> usize {
         let engine = self.engine;
         let source = self
             .sources
@@ -91,7 +99,7 @@ impl QueryEngine {
                 node_type: n.node_type.clone(),
                 path: n.path.clone(),
                 line: n.line,
-                end_line: Some(ends.of(n)),
+                end_line: ends.of(n),
                 role: n.role.clone(),
                 preview: preview_lines
                     .filter(|_| n.line > 0)
@@ -127,10 +135,10 @@ impl QueryEngine {
             .map(|n| {
                 let import = n.role.as_deref() == Some("Import");
                 OutlineItem {
-                    end_line: (!import).then(|| ends.of(&n)),
+                    end_line: if import { None } else { ends.of(&n) },
                     symbol: n.name,
                     kind: n.kind,
-                    line: n.line,
+                    line: line_of(n.line),
                     role: n.role,
                     path: (import || whole_tree).then_some(n.path),
                 }
@@ -239,8 +247,8 @@ impl QueryEngine {
                     kind: n.kind.clone(),
                     node_type: n.node_type.clone(),
                     path: n.path.clone(),
-                    line: n.line,
-                    end_line: Some(ends.of(n)),
+                    line: line_of(n.line),
+                    end_line: ends.of(n),
                     depth,
                 }
             })
@@ -254,7 +262,7 @@ impl QueryEngine {
                     Some(node.line),
                 )
             }
-            Some((idx, found)) => (found, None, Some(self.graph.graph[idx].line)),
+            Some((idx, found)) => (found, None, line_of(self.graph.graph[idx].line)),
             None => (BlastMatch::NotFound, None, None),
         };
         BlastRadiusResult {
@@ -262,6 +270,7 @@ impl QueryEngine {
             target_symbol,
             target_line,
             matched,
+            via: walk.via.map(|idx| namer.qualify(&self.graph.graph[idx])),
             direct,
             transitive: total - direct,
             total,
@@ -281,7 +290,7 @@ impl QueryEngine {
                 (
                     Some(namer.qualify(node)),
                     Some(node.path.clone()),
-                    Some(node.line),
+                    line_of(node.line),
                 )
             }
             None => (None, None, None),
@@ -296,7 +305,7 @@ impl QueryEngine {
                     kind: n.kind.clone(),
                     node_type: n.node_type.clone(),
                     path: n.path.clone(),
-                    line: n.line,
+                    line: line_of(n.line),
                     depth,
                 }
             })

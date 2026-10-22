@@ -96,7 +96,7 @@ fn outline_result_lists_a_file_and_rejects_an_unindexed_one() {
     assert!(outline
         .items
         .iter()
-        .all(|i| i.end_line.is_some_and(|e| e >= i.line)));
+        .all(|i| i.line.zip(i.end_line).is_some_and(|(l, e)| e >= l)));
     json("outline", &outline);
 
     let err = engine.outline_result("src/nope.rs").unwrap_err();
@@ -166,7 +166,10 @@ fn blast_result_agrees_with_the_walk_and_names_its_target() {
             .iter()
             .map(|i| (&i.path, i.line))
             .collect::<Vec<_>>(),
-        nodes.iter().map(|n| (&n.path, n.line)).collect::<Vec<_>>()
+        nodes
+            .iter()
+            .map(|n| (&n.path, (n.line > 0).then_some(n.line)))
+            .collect::<Vec<_>>()
     );
     json("blast", &result);
 

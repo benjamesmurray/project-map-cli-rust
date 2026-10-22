@@ -1,0 +1,50 @@
+{
+  "contract": 1,
+  "index": {
+    "commit": null,
+    "dirty": null,
+    "schema_version": 4,
+    "stale": false,
+    "state": "ok"
+  },
+  "results": [
+    {
+      "depth": 1,
+      "kind": "file",
+      "node_type": "file",
+      "path": "rust_crate/src/a/mod.rs",
+      "symbol": "rust_crate.src.a"
+    },
+    {
+      "depth": 1,
+      "kind": "file",
+      "node_type": "file",
+      "path": "rust_crate/src/user.rs",
+      "symbol": "rust_crate.src.user"
+    },
+    {
+      "depth": 1,
+      "kind": "file",
+      "node_type": "file",
+      "path": "rust_crate/tests/uses_crate_name.rs",
+      "symbol": "rust_crate.tests.uses_crate_name"
+    }
+  ],
+  "summary": {
+    "direct": 3,
+    "files_affected": 3,
+    "languages": [
+      "rust"
+    ],
+    "matched": "symbol",
+    "target_line": 6,
+    "target_path": "rust_crate/src/a/b.rs",
+    "target_symbol": "Sym.gamma",
+    "total": 3,
+    "transitive": 0,
+    "via": "Sym"
+  },
+  "tool": "blast_radius",
+  "total": 3,
+  "truncated": false
+}

@@ -10,7 +10,6 @@
   "results": [
     {
       "kind": "file",
-      "line": 0,
       "path": "rust_crate/src/a/b.rs",
       "role": "Import",
       "symbol": "rust_crate.src.a.b"
@@ -24,7 +23,6 @@
     },
     {
       "kind": "file",
-      "line": 0,
       "path": "rust_crate/src/a/c.rs",
       "role": "Import",
       "symbol": "rust_crate.src.a.c"

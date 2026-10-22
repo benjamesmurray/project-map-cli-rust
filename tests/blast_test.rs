@@ -183,6 +183,110 @@ fn a_file_target_is_seeded_with_the_symbols_it_defines() {
 }
 
 #[test]
+fn a_method_is_counted_through_its_enclosing_type() {
+    let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
+    // Nothing imports `gamma`; the files that import `Sym` are its dependents.
+    let ty = engine.blast_result("rust_crate/src/a/b.rs", "Sym", None);
+    let method = engine.blast_result("rust_crate/src/a/b.rs", "gamma", None);
+    assert_eq!(method.matched, BlastMatch::Symbol);
+    assert_eq!(method.target_symbol.as_deref(), Some("Sym.gamma"));
+    assert_eq!(method.via.as_deref(), Some("Sym"));
+    assert_eq!(depths(&method), depths(&ty));
+    assert!(method.total > 0);
+    // The type itself has no enclosing symbol.
+    assert_eq!(ty.via, None);
+    let v = serde_json::to_value(&ty).unwrap();
+    assert!(v.get("via").is_none());
+    assert_eq!(
+        serde_json::to_value(&method).unwrap()["via"],
+        serde_json::json!("Sym")
+    );
+
+    // The enclosing type's own file and symbols are still never listed.
+    assert!(method
+        .items
+        .iter()
+        .all(|i| i.path != "rust_crate/src/a/b.rs"));
+}
+
+#[test]
+fn a_method_of_an_impl_block_reaches_the_struct_it_belongs_to() {
+    let (_dir, engine) = engine_with(&[
+        (
+            "Cargo.toml",
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        ),
+        ("src/lib.rs", "pub mod shape;\npub mod user;\n"),
+        (
+            "src/shape.rs",
+            "pub struct Shape;\n\nimpl Shape {\n    pub fn area(&self) -> u32 {\n        1\n    }\n}\n",
+        ),
+        (
+            "src/user.rs",
+            "use crate::shape::Shape;\n\npub fn make() -> Shape {\n    Shape\n}\n",
+        ),
+    ]);
+    // The `impl` block is its own node, named after the type; the importer links to the struct.
+    let ty = engine.blast_result("src/shape.rs", "Shape", None);
+    assert!(ty.items.iter().any(|i| i.path == "src/user.rs"));
+    let method = engine.blast_result("src/shape.rs", "area", None);
+    assert_eq!(method.via.as_deref(), Some("Shape"));
+    assert!(
+        method.items.iter().any(|i| i.path == "src/user.rs"),
+        "{:?}",
+        depths(&method)
+    );
+}
+
+#[test]
+fn a_free_function_gets_no_extra_seeds() {
+    let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
+    let r = engine.blast_result("rust_crate/src/user.rs", "sym_count", None);
+    assert_eq!(r.matched, BlastMatch::Symbol);
+    assert_eq!(r.via, None);
+    assert_eq!(r.total, 0);
+}
+
+#[test]
+fn toon_names_the_enclosing_symbol_only_for_a_method() {
+    let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
+    let render = |symbol: &str| {
+        let (radius, nodes) = engine.blast_with_nodes("rust_crate/src/a/b.rs", symbol);
+        ToonFormatter::format_blast_radius("rust_crate/src/a/b.rs", symbol, &nodes, &radius)
+    };
+    assert!(render("gamma").contains("Counted via enclosing symbol Sym"));
+    assert!(!render("Sym").contains("Counted via"));
+}
+
+#[test]
+fn file_nodes_have_no_line_and_symbols_keep_theirs() {
+    let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
+    let r = engine.blast_result("rust_crate/src/a/b.rs", "Sym", None);
+    // The dependents are file nodes: no `line`, no `end_line`.
+    assert!(!r.items.is_empty());
+    for item in &r.items {
+        assert_eq!((item.line, item.end_line), (None, None), "{}", item.path);
+        let v = serde_json::to_value(item).unwrap();
+        assert!(v.get("line").is_none() && v.get("end_line").is_none());
+    }
+    // A file target has no `target_line`; a symbol target has one.
+    let file = engine.blast_result("rust_crate/src/a/b.rs", "no_such_symbol", None);
+    assert_eq!(file.target_line, None);
+    assert!(serde_json::to_value(&file)
+        .unwrap()
+        .get("target_line")
+        .is_none());
+    assert!(r.target_line.is_some_and(|l| l >= 1));
+    // `plan` from a file lists file nodes and symbols: only the symbols have a line.
+    let plan = engine.plan_result("rust_crate.src.user", None);
+    assert!(plan.items.iter().any(|i| i.kind == "file"));
+    assert!(plan.items.iter().any(|i| i.kind != "file"));
+    for item in &plan.items {
+        assert_eq!(item.line.is_some(), item.kind != "file", "{item:?}");
+    }
+}
+
+#[test]
 fn rust_crate_importers_appear_through_use_crate() {
     let (_dir, engine) = engine_for(IMPORTS_FIXTURE);
     let sym = engine.blast_result("rust_crate/src/a/b.rs", "Sym", None);

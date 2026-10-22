@@ -10,27 +10,21 @@
   "results": [
     {
       "depth": 1,
-      "end_line": 0,
       "kind": "file",
-      "line": 0,
       "node_type": "file",
       "path": "diamond/a.ts",
       "symbol": "diamond.a"
     },
     {
       "depth": 1,
-      "end_line": 0,
       "kind": "file",
-      "line": 0,
       "node_type": "file",
       "path": "diamond/m1.ts",
       "symbol": "diamond.m1"
     },
     {
       "depth": 2,
-      "end_line": 0,
       "kind": "file",
-      "line": 0,
       "node_type": "file",
       "path": "diamond/m2.ts",
       "symbol": "diamond.m2"

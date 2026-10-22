@@ -388,6 +388,24 @@ fn imports_cases(engine: &QueryEngine, root: &Path) -> Vec<Case> {
             }),
         },
         Case {
+            name: "blast_radius_rust_method",
+            tool: "blast_radius",
+            value: j(ToolCall::BlastRadius {
+                path: "rust_crate/src/a/b.rs",
+                symbol: "gamma",
+                limit: None,
+            }),
+        },
+        Case {
+            name: "blast_radius_rust_free_function",
+            tool: "blast_radius",
+            value: j(ToolCall::BlastRadius {
+                path: "rust_crate/src/user.rs",
+                symbol: "sym_count",
+                limit: None,
+            }),
+        },
+        Case {
             name: "query_path_rust",
             tool: "query",
             value: j(query_path("rust_crate/src/user.rs")),

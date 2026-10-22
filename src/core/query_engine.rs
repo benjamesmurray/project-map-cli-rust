@@ -47,6 +47,9 @@ impl RetryPolicy {
 /// A blast radius walk: the node it started from and its dependents.
 pub(crate) struct BlastWalk {
     pub target: Option<(NodeIndex, BlastMatch)>,
+    /// For a symbol nested in another (a method), the outermost enclosing symbol the
+    /// walk also started from.
+    pub via: Option<NodeIndex>,
     /// (depth, node); depth is 1 for a direct dependent. Ordered by depth, path, line, name.
     pub dependents: Vec<(usize, NodeIndex)>,
 }
@@ -280,6 +283,7 @@ impl QueryEngine {
         let Some((start, matched)) = self.blast_target(norm_path, symbol) else {
             return BlastWalk {
                 target: None,
+                via: None,
                 dependents: Vec::new(),
             };
         };
@@ -290,6 +294,48 @@ impl QueryEngine {
         let mut dist: HashMap<NodeIndex, usize> = HashMap::new();
         dist.insert(start, 0);
         let mut queue = VecDeque::from([(start, 0usize)]);
+        // A method is reached through its type: no `use` names a method, so importers of
+        // the enclosing symbols (and of the same-named symbols of the file, such as the
+        // struct an `impl` block belongs to) are its dependents. A free function has no
+        // enclosing symbol and gets no extra seeds.
+        let mut via = None;
+        if matched == BlastMatch::Symbol {
+            let target = &self.graph.graph[start];
+            let encloses = |n: &NodeData| {
+                n.node_type == NodeType::Symbol
+                    && n.path == target.path
+                    && n.end_byte > n.start_byte
+                    && n.start_byte <= target.start_byte
+                    && n.end_byte >= target.end_byte
+                    && (n.start_byte, n.end_byte) != (target.start_byte, target.end_byte)
+            };
+            let enclosing: Vec<NodeIndex> = self
+                .graph
+                .graph
+                .node_indices()
+                .filter(|i| encloses(&self.graph.graph[*i]))
+                .collect();
+            via = enclosing.iter().copied().min_by_key(|i| {
+                let n = &self.graph.graph[*i];
+                (n.start_byte, std::cmp::Reverse(n.end_byte), *i)
+            });
+            let names: Vec<&str> = enclosing
+                .iter()
+                .map(|i| self.graph.graph[*i].name.as_str())
+                .collect();
+            for idx in self.graph.graph.node_indices() {
+                let n = &self.graph.graph[idx];
+                let seed = enclosing.contains(&idx)
+                    || (idx != start
+                        && n.node_type == NodeType::Symbol
+                        && n.path == target.path
+                        && names.contains(&n.name.as_str()));
+                if seed {
+                    dist.insert(idx, 0);
+                    queue.push_back((idx, 0));
+                }
+            }
+        }
         // A file target stands for everything the file defines: `use crate::a::Sym` links
         // to the symbol, not the file, so the walk also starts from each of its symbols.
         if matched == BlastMatch::File {
@@ -352,6 +398,7 @@ impl QueryEngine {
         });
         BlastWalk {
             target: Some((start, matched)),
+            via,
             dependents,
         }
     }

@@ -13,7 +13,6 @@
     "files_affected": 0,
     "languages": [],
     "matched": "file",
-    "target_line": 0,
     "target_path": "src/audit/log.rs",
     "total": 0,
     "transitive": 0
