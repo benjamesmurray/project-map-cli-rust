@@ -278,7 +278,7 @@
       "id": "6.4",
       "title": "Phase 6: Publish, Install and Archive (owner go-ahead)",
       "description": "After the owner says go: tag v0.4.0 and push the tag, cargo publish, cargo install project-map-cli-rust --version 0.4.0 --locked --force, confirm crates.io lists 0.4.0 and the installed binary reports it, list running mcp processes for the owner to restart, then archive the feature through the spec CLI once every task is completed.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "6.3"
       ]

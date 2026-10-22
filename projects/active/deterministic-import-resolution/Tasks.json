@@ -1,0 +1,132 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Phase 1: Prerequisites and Close the Previous Feature",
+      "description": "Mark machine-interface-for-ost task 6.4 complete (0.4.0 is tagged, published and installed) and archive that feature through the spec CLI; fix any links into its reports that the move breaks (README, CHANGELOG, this Specification). Confirm projects/active/ holds only deterministic-import-resolution. Record the prerequisite results in .epoch-context.md. Done when sc_status shows the old feature archived.",
+      "status": "pending",
+      "dependencies": []
+    },
+    {
+      "id": "1.2",
+      "title": "Phase 1: 0.4.0 Variance Baseline",
+      "description": "With the installed 0.4.0 release binary, on copies of this repository, /home/benmurray/Projects/OST-Manager (at its current HEAD) and /opt/wde, build 5 times each and record per build: edge count, Imports edge count, resolved and unresolved import counts (from the imports side table), and blast_radius totals for a fixed list of five symbols per repository (for OST-Manager include src/ost_manager/config.py::Settings). Also time a full build (median of 3, release build). Save the commands (a script under projects/active/deterministic-import-resolution/reports/ is fine) and the table with each repository's spread to projects/active/deterministic-import-resolution/reports/baseline.md. Done when the report shows the 0.4.0 variation on at least OST-Manager.",
+      "status": "pending",
+      "dependencies": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Phase 1: ambiguous_imports Fixture",
+      "description": "Create tests/fixtures/ambiguous_imports/ with a README listing which file exercises which rule: Python packages under src/ (src/app/config.py, src/app/service.py importing app.config) and a second root (tests/fixtures_copy/app/config.py or similar) so app.config has a tier-1 candidate with fewer leading segments that must win; an exact tie (two candidates with equal tier and equal leading-segment count) that must stay unlinked; module myredis.py plus an import of redis that must not link to it; a tier-2 case (import pkg.mod.Thing, file pkg/mod.py); a tier-3 case. Write down the expected edge list in the README. Existing tests still pass.",
+      "status": "pending",
+      "dependencies": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Phase 1: resolve_by_suffix",
+      "description": "Create src/core/import_resolve.rs (registered in core/mod.rs) with SuffixResolution { Unique, Ambiguous, None } and resolve_by_suffix(import, fqns: &BTreeSet<String>) implementing the Specification's tiers on whole dot segments, the fewer-leading-segments rule within a tier, and Ambiguous with sorted candidates on a remaining tie. Unit tests in the module: each tier, tier precedence, the leading-segment rule, exact tie, redis vs myredis, empty import, single-segment import, an FQN equal to the import (handled by Strategy 1 but must still return Unique here). Not wired into the orchestrator yet. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Phase 1 Gate",
+      "description": "Phase 1 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase1_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 2.",
+      "status": "pending",
+      "dependencies": [
+        "1.2",
+        "1.3",
+        "1.4"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Phase 2: Wire Strategy 3 and Count Ambiguous Imports",
+      "description": "In orchestrator pass 2, replace the HashMap keys().find() fallback with resolve_by_suffix over an ordered FQN set (keep fqn_to_node for lookups, or make it a BTreeMap). Unique adds the Imports edge and resolved=true; Ambiguous and None leave resolved=false. Count Ambiguous results and log the first 20 at debug level with the import and its candidates. Strategies 1 and 2 and the Rust use resolver unchanged. Tests on the 1.3 fixture: the README's expected edge list exactly, resolved flags through the imports query, the ambiguous count. Update JSON goldens only where values from import edges change; list each changed golden and the reason for the phase report. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.5"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Phase 2: Sorted File Walk",
+      "description": "Make pass 1 deterministic: WalkBuilder::sort_by_file_name (or collect and sort paths before parsing), so node and edge order depend only on the tree. Test: build the docs, imports and ambiguous_imports fixtures in two differently named tempdirs and assert the index files are byte-identical after removing IndexMeta's built_at, builder_pid and root (and Git fields). cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.5"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Phase 2: HashMap/HashSet Audit",
+      "description": "Audit every HashMap and HashSet in src/ (about 45 uses). For each, record in a table: file:line, what it holds, whether its iteration order can reach graph construction, a side table or tool output, and the fix (BTreeMap/BTreeSet, sort before iterating, or lookup-only with a one-line code comment saying why order is irrelevant). Apply the fixes. Put the table in the phase report. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Phase 2: Repeated-Build Determinism Tests",
+      "description": "Add tests/import_resolution_test.rs (or extend determinism_test.rs): build the ambiguous_imports fixture 20 times in one process and assert identical sorted edge lists ((from path, from symbol, to path, to symbol, type) tuples) and identical import side tables; add ambiguous_imports to the existing two-directory determinism_test calls in both formats. Confirm the new tests fail on 0.4.0's resolver (temporarily, or by reasoning recorded in the report) so they would have caught the defect. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.3"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Phase 2 Gate",
+      "description": "Phase 2 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase2_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 3.",
+      "status": "pending",
+      "dependencies": [
+        "2.4"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Phase 3: Real-Repository Verification",
+      "description": "Repeat the 1.2 measurements with the 0.4.1 release build on the same three repositories: 5 builds each must agree exactly on every recorded number, and two directory copies of OST-Manager must give identical blast_radius JSON for config.py::Settings. Record 0.4.0 vs 0.4.1 edge, Imports edge, resolved and ambiguous counts and the five blast totals per repository, and indexing time against the +5 % limit, in projects/active/deterministic-import-resolution/reports/verification.md. Inspect a sample of 20 newly unlinked and 20 still-linked suffix-resolved imports on OST-Manager and /opt/wde; any wrong link means tightening the tier rules (new task) before release. Map every Specification item and Verification Criterion to its task and test in the same report.",
+      "status": "pending",
+      "dependencies": [
+        "2.5"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Phase 3: README, CHANGELOG and Version",
+      "description": "README: import resolution (strategies 1-3, segment-based tiers, ties left unlinked), the determinism guarantee (same tree gives the same graph and index bytes apart from build fields), and the imports package-name note (Python packages are their first segment: imports google, not google.*; the prefix form is for scoped JS packages). CHANGELOG 0.4.1 under Fixed: nondeterministic import resolution, raw-string suffix matches, sorted walk; note that Imports edges and blast_radius results change. Bump Cargo.toml to 0.4.1; cargo publish --dry-run passes on a clean tree.",
+      "status": "pending",
+      "dependencies": [
+        "3.1"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Phase 3: Hand-Off Note and Release Prep",
+      "description": "Write projects/active/deterministic-import-resolution/reports/ost-manager-handoff.md: what 0.4.1 fixes, the OST-Manager before/after numbers, and the proposed OST-Manager ROADMAP lines (P4 row: project-map 0.4.1 released; P5 gate: released in project-map >= 0.4.1). Do not edit the OST-Manager repository. Run the phase gate checks, commit and push, then STOP: tagging, publishing and installing wait for the owner's go-ahead.",
+      "status": "pending",
+      "dependencies": [
+        "3.2"
+      ]
+    },
+    {
+      "id": "3.4",
+      "title": "Phase 3: Publish, Install and Archive (owner go-ahead)",
+      "description": "After the owner says go: tag v0.4.1 and push it, cargo publish, cargo install project-map-cli-rust --version 0.4.1 --locked --force, confirm crates.io and the installed binary report 0.4.1, list running mcp processes for the owner to restart (then refresh each served repository), and archive the feature through the spec CLI once every task is completed.",
+      "status": "pending",
+      "dependencies": [
+        "3.3"
+      ]
+    }
+  ]
+}
