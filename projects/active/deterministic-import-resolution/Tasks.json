@@ -114,7 +114,7 @@
       "id": "3.3",
       "title": "Phase 3: Hand-Off Note and Release Prep",
       "description": "Write projects/active/deterministic-import-resolution/reports/ost-manager-handoff.md: what 0.4.1 fixes, the OST-Manager before/after numbers, and the proposed OST-Manager ROADMAP lines (P4 row: project-map 0.4.1 released; P5 gate: released in project-map >= 0.4.1). Do not edit the OST-Manager repository. Run the phase gate checks, commit and push, then STOP: tagging, publishing and installing wait for the owner's go-ahead.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "3.2"
       ]
@@ -123,7 +123,7 @@
       "id": "3.4",
       "title": "Phase 3: Publish, Install and Archive (owner go-ahead)",
       "description": "After the owner says go: tag v0.4.1 and push it, cargo publish, cargo install project-map-cli-rust --version 0.4.1 --locked --force, confirm crates.io and the installed binary report 0.4.1, list running mcp processes for the owner to restart (then refresh each served repository), and archive the feature through the spec CLI once every task is completed.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "3.3"
       ]
