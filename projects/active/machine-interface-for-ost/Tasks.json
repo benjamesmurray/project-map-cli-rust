@@ -251,7 +251,7 @@
       "id": "6.1",
       "title": "Phase 6: Performance, Size and Output-Size Verification",
       "description": "Repeat the 1.1 measurements with the 0.4.0 release build: indexing time (median of 3) and index size on this repository and /opt/wde, and TOON character counts for the fixed call set. Record them against the limits (time <= +10 %, size <= +15 %, TOON unchanged except blast_radius and Rust context imports, as the Specification allows) in projects/active/machine-interface-for-ost/reports/verification.md. A breach becomes a fix task before release.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "5.2"
       ]
@@ -260,7 +260,7 @@
       "id": "6.2",
       "title": "Phase 6: Quality Gate and Coverage Map",
       "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher, regression and spawned-binary suites) clean. Walk every In-Scope item, Technical Constraint, User Story criterion and Verification Criterion and map each to the task and test covering it in projects/active/machine-interface-for-ost/reports/verification.md; any gap becomes a task before release.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "6.1"
       ]
