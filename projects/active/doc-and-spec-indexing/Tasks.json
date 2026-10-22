@@ -309,7 +309,7 @@
       "id": "7.3",
       "title": "Phase 7: Docs, Version and Release Prep",
       "description": "README: document the six tools, CLI subcommands, linking rules, OpenAPI detection, terms, schema v3/stale behaviour, and an upgrade note: after installing 0.3.0 restart every running project-map-cli-rust mcp process before the first 0.3 build, since 0.2.x watchers would overwrite a v3 index with v2. CHANGELOG 0.3.0 entry with the same upgrade note. Bump Cargo.toml to 0.3.0; cargo publish --dry-run passes. Leave tagging, pushing and publishing to the user (prepare commands in the handover).",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "7.2"
       ]
@@ -318,7 +318,7 @@
       "id": "7.4",
       "title": "Phase 7: Hand Off Post-Release Acceptance",
       "description": "Non-gating: record for OST-Manager that 0.3.0 unblocks P5 and that P5's first task is the hand check of doc_terms and doc_outline on OST-Manager's docs/ as persona-extraction input, with findings returning as a 0.3.x follow-up. Put this in the release handover (and propose the line for OST-Manager's ROADMAP.md rather than editing another repo unasked).",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "7.3"
       ]
