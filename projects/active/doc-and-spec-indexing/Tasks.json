@@ -327,7 +327,7 @@
       "id": "8.1",
       "title": "Phase 8: Fix Generic YAML Key Line Location",
       "description": "Non-gating follow-up, found in the 0.3.0 work and out of its scope. src/core/parser.rs extract_yaml_symbols locates keys by the first text match in the file, so a repeated key name reports the line of its first occurrence, not its own. Fix by tracking each key's real line (walk the text in step with the parsed structure, or use a position-aware YAML parse) so duplicated keys at different nesting levels get distinct, correct locations. Add a regression fixture with the same key under several parents. Existing snapshots that encode the wrong lines are corrected and the diff reviewed. cargo test, cargo fmt --check and cargo clippy --all-targets -- -D warnings pass.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "7.4"
       ]

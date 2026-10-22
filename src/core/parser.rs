@@ -419,18 +419,25 @@ impl CodeParser {
                 imports: Vec::new(),
             });
         }
-        let file_lines: Vec<&str> = content.lines().collect();
-
+        // Keys and values are reported in document order, so each lookup resumes
+        // after the previous match: a key repeated under several parents gets its
+        // own line, not the first occurrence's.
+        let line_starts: Vec<usize> = std::iter::once(0)
+            .chain(content.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let cursor = std::cell::Cell::new(0usize);
         let find_line_and_bytes = |target: &str| -> (usize, usize, usize) {
-            for (idx, line) in file_lines.iter().enumerate() {
-                if let Some(col) = line.find(target) {
-                    let start_byte: usize =
-                        file_lines[..idx].iter().map(|l| l.len() + 1).sum::<usize>() + col;
-                    let end_byte = start_byte + target.len();
-                    return (idx + 1, start_byte, end_byte);
+            let found = find_token(&content, cursor.get(), target)
+                .or_else(|| find_token(&content, 0, target));
+            match found {
+                Some(start) => {
+                    let end = start + target.len();
+                    cursor.set(end);
+                    let line = line_starts.partition_point(|&s| s <= start);
+                    (line, start, end)
                 }
+                None => (1, 0, 0),
             }
-            (1, 0, 0)
         };
 
         if let Ok(yaml_val) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
@@ -967,6 +974,32 @@ pub fn classify_kafka_code_role(line: &str) -> String {
     }
 }
 
+/// First occurrence of `target` in `text` at or after byte `from` that is not
+/// part of a longer word (`name` does not match inside `service_name`). Falls
+/// back to a plain substring match when no whole-word match exists.
+fn find_token(text: &str, from: usize, target: &str) -> Option<usize> {
+    if target.is_empty() || from > text.len() {
+        return None;
+    }
+    let word = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '.';
+    let bounded = |at: usize| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + target.len()..].chars().next();
+        !before.is_some_and(word) && !after.is_some_and(word)
+    };
+    let mut plain = None;
+    let mut offset = from;
+    while let Some(rel) = text[offset..].find(target) {
+        let at = offset + rel;
+        if bounded(at) {
+            return Some(at);
+        }
+        plain.get_or_insert(at);
+        offset = at + text[at..].chars().next().map_or(1, char::len_utf8);
+    }
+    plain
+}
+
 pub fn is_kafka_topic_string(s: &str) -> bool {
     let s = s.trim().trim_matches(|c| c == '\'' || c == '"');
     if s.len() < 3
@@ -1103,6 +1136,47 @@ mod tests {
     }
 
     #[test]
+    fn test_yaml_repeated_keys_get_their_own_lines() {
+        let content = "service_name: top\nweb:\n  port: 80\n  name: web\ndb:\n  port: 5432\n  name: db\ncache:\n  port: 6379\n  name: cache\n";
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config.yml");
+        std::fs::write(&path, content).unwrap();
+
+        let outline = CodeParser::new().parse_yaml_file(&path).unwrap();
+        let lines_of = |name: &str| -> Vec<usize> {
+            outline
+                .symbols
+                .iter()
+                .filter(|s| s.name == name)
+                .map(|s| s.line)
+                .collect()
+        };
+        assert_eq!(lines_of("port"), vec![3, 6, 9]);
+        // `name` is not found inside `service_name` on line 1.
+        assert_eq!(lines_of("name"), vec![4, 7, 10]);
+        assert_eq!(lines_of("service_name"), vec![1]);
+        for s in outline.symbols.iter().filter(|s| s.name == "port") {
+            assert_eq!(&content[s.start_byte..s.end_byte], "port");
+            assert_eq!(content[..s.start_byte].matches('\n').count() + 1, s.line);
+        }
+    }
+
+    #[test]
+    fn test_yaml_byte_offsets_are_exact_with_crlf_line_endings() {
+        let content = "a:\r\n  b: 1\r\nc:\r\n  b: 2\r\n";
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("crlf.yml");
+        std::fs::write(&path, content).unwrap();
+
+        let outline = CodeParser::new().parse_yaml_file(&path).unwrap();
+        let bs: Vec<_> = outline.symbols.iter().filter(|s| s.name == "b").collect();
+        assert_eq!(bs.iter().map(|s| s.line).collect::<Vec<_>>(), vec![2, 4]);
+        for s in bs {
+            assert_eq!(&content[s.start_byte..s.end_byte], "b");
+        }
+    }
+
+    #[test]
     fn test_parse_yaml_file() {
         let temp_path = std::env::temp_dir().join("test_pm_compose.yml");
         let yaml_content = r#"
@@ -1166,15 +1240,15 @@ services:
 
     #[test]
     fn test_non_openapi_yaml_unchanged() {
-        // Snapshot of the 0.2.0 output (FIXTURE_MAP.txt), including its first-text-match
-        // line for 'openapi' and the version read as a Kafka topic: existing bugs
-        // outside this feature.
+        // Snapshot of the 0.2.0 output (FIXTURE_MAP.txt) with 'openapi' at its real
+        // line (4; 0.2.0 matched the comment on line 1), and the version still read
+        // as a Kafka topic (task 8.2).
         let got = yaml_fixture_symbols("tests/fixtures/docs/config/settings.yaml");
         let want: Vec<_> = [
-            ("openapi", "config", 1),
             ("service", "config", 2),
             ("name", "config", 3),
             ("3.0.0", "kafka_topic", 4),
+            ("openapi", "config", 4),
             ("database", "config", 5),
             ("url", "config", 6),
         ]
