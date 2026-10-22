@@ -299,7 +299,7 @@
       "id": "7.2",
       "title": "Phase 7: Quality Gate",
       "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher and regression suites) all clean. Walk the Specification's In-Scope bullets, Technical Constraints and Verification Criteria one by one and map each to the task and test that covers it in reports/verification.md; any gap becomes a new task before release.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "6.2",
         "7.1"
@@ -309,7 +309,7 @@
       "id": "7.3",
       "title": "Phase 7: Docs, Version and Release Prep",
       "description": "README: document the six tools, CLI subcommands, linking rules, OpenAPI detection, terms, schema v3/stale behaviour, and an upgrade note: after installing 0.3.0 restart every running project-map-cli-rust mcp process before the first 0.3 build, since 0.2.x watchers would overwrite a v3 index with v2. CHANGELOG 0.3.0 entry with the same upgrade note. Bump Cargo.toml to 0.3.0; cargo publish --dry-run passes. Leave tagging, pushing and publishing to the user (prepare commands in the handover).",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "7.2"
       ]

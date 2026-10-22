@@ -5,6 +5,30 @@ All notable changes to `project-map-cli-rust` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-22
+
+### Upgrade note (read first)
+After installing 0.3.0, **restart every running `project-map-cli-rust mcp` process** (all editors, agents and repositories) **before the first 0.3 build**. A 0.2.x watcher rebuilds the whole index on any change and would overwrite a schema-3 index with schema 2, dropping the documentation index. 0.3.0 cannot guard against 0.2.x binaries that are still running. Then run `project-map refresh` once per workspace.
+
+### Added
+- **Documentation indexing**: Markdown heading sections with GitHub-style anchors and byte ranges (section text is read from disk on demand, not stored), YAML frontmatter (`id`, `title`, `status`, `date`, `domain`, `tags`, `supersedes`), and recurring domain terms per directory.
+- **Doc → code links**: exact, ordered resolution of Markdown links, paths, `path::symbol`, `path:line`, `Type::member` and unique bare names to `References` edges from the deepest section. Unresolved and ambiguous mentions are counted.
+- **OpenAPI/Swagger**: detection by name or by a top-level `openapi`/`swagger` key (YAML/JSON up to 1 MB); operations and schemas are indexed, and detected specs no longer produce generic YAML symbols.
+- **Six MCP tools**: `doc_search`, `doc_outline`, `doc_section`, `doc_links`, `doc_terms`, `api_surface`, with TOON output capped at 4,000 characters and a truncation marker.
+- **CLI**: `doc search|outline|section|links|terms` and `api`, printing the same output as the MCP tools.
+- `status` reports doc files, sections, references, unresolved and ambiguous mentions, and API operations.
+- Index `schema_version` 3 with `serde(default)` count fields and `doc_meta` / `doc_terms` side tables. New `NodeType` variants `DocSection`, `ApiOperation`, `ApiSchema`.
+- Dependency: `pulldown-cmark` 0.13.
+
+### Changed
+- All 13 MCP tool descriptions now say what question each tool answers better than grep. Tool names, parameters and output are unchanged (the existing seven tools' parameter schemas are snapshot-tested).
+- An index with schema version below 3, or with no metadata, is loaded read-only: it is reported as stale and never rewritten by a query.
+- A build refuses to overwrite an index with a newer `schema_version` (`AppError::NewerIndex`); the watcher logs it and skips the rebuild.
+- Existing code tools (`query`, `search`, `plan`, `blast_radius`, `fetch_symbol`, symbol counts) skip documentation and API nodes. File outlines no longer list a document's references to code.
+
+### Performance
+- Full-index time on `/opt/wde` (1,628 Markdown files) is unchanged (4.5 s); on this repository +5 %. Index size grows (`/opt/wde` 7.5 MB to 13.7 MB) because sections, terms and references are stored.
+
 ## [0.2.0] - 2026-10-12
 
 ### Fixed
