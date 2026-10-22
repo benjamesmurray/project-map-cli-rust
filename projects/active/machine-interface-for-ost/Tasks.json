@@ -1,0 +1,287 @@
+{
+  "template_tags_present": false,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Phase 1: Prerequisite Check and Baseline (0.3.0)",
+      "description": "Check the Specification's Prerequisites: run pgrep -af 'project-map-cli-rust mcp' and confirm every running server binary is 0.3.0 or later (ask the owner to restart any older ones; do not kill other sessions' processes). Record the result in .epoch-context.md. With the 0.3.0 release build, time a full refresh (median of 3) and record index size and file/symbol/edge counts for this repository and /opt/wde, plus TOON output character counts for a fixed call set (status, search 'graph', query path=src/core/graph.rs, blast_radius path=src/core/query_engine.rs symbol=load (node names are bare, so 'QueryEngine::load' would silently fall back to the whole file), doc_outline README.md, doc_terms). Save each call's full output to projects/active/machine-interface-for-ost/reports/baseline/<call>.toon (1.4 compares byte for byte against these), and write the command lines and numbers to projects/active/machine-interface-for-ost/reports/baseline.md so 6.1 compares like for like. Build /opt/wde with --out pointing at a scratch directory, never its own .project-map/ (older servers may be watching it); delete the scratch index afterwards. Done when the report exists for both repositories.",
+      "status": "pending",
+      "dependencies": []
+    },
+    {
+      "id": "1.2",
+      "title": "Phase 1: Imports and Git Fixtures",
+      "description": "Create tests/fixtures/imports/: JS (.js, .jsx, .mjs, .cjs) and TS files importing @sentry/node, @sentry/react, stripe, posthog-js via ES import, export-from, require('x') and dynamic import('x'), plus relative imports of fixture files; Python importing sentry_sdk and sentry_sdk.integrations.django plus a relative import; Rust with use serde_json::Value, use crate::x, use self::y, use super::z and extern crate; PHP with a namespaced use. Include a diamond-shaped dependency (a reachable at depths 1 and 3) for blast radius. Add a test helper that copies a fixture into a tempdir and makes it a Git repository (git init, fixed author/committer name, email and date via env, one commit) and returns the SHA. Add a README.md in the fixture dir listing which file exercises which rule. Done when the fixtures exist and cargo test passes. Also: a small Rust fixture crate (its own Cargo.toml, src/lib.rs, src/a/b.rs, src/a/mod.rs, src/c/mod.rs) using use crate::a::b::Sym, a grouped use crate::a::{b, c}, self::/super:: paths and its own crate name from a tests/ file, so Rust resolution and blast radius have something to find; a file with two impl From<..> for E blocks (non-unique qualified names); Python 'import a, b' on one line; and JS files that must be skipped: vendor.min.js, a >256 KB generated file (written by the test helper, not committed) and a file with a >1,000-character line.",
+      "status": "pending",
+      "dependencies": []
+    },
+    {
+      "id": "1.3",
+      "title": "Phase 1: Typed Result Structs and QueryError",
+      "description": "Create src/core/results.rs with Serialize structs for every tool's result (StatusResult, EntityList, FileOutlineResult, FileList, FetchResult, BlastRadiusResult, PlanResult, DocSearchResult, DocOutlineResult, DocSectionResult, DocLinksResult, DocTermsResult, ApiSurfaceResult, ModulesResult, ImportsResult, InitResult) using the field names in the Specification's Data Models table, plus QueryError { code, message } and the envelope's index info (state ok|stale|missing, schema_version, commit, dirty, stale) with the codes index_missing, index_stale, not_found, invalid_argument, io_error. Add a helper for qualified symbol names (a symbol inside another symbol's byte range in the same file gives Outer.inner; impl Trait for Type is named after Type; names are not unique, which a doc comment says) and end_line computation from byte ranges. Unit tests: serialisation field names, omitted-not-null for absent optional fields, qualified names on a nested fixture, end_line. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Phase 1: Split Queries From TOON Rendering",
+      "description": "Refactor every tool so a query function returns the 1.3 result struct (or QueryError) and toon.rs renders it: QueryEngine code tools and the render_* functions in doc_queries.rs become *_result queries plus TOON rendering. TOON output must stay byte-identical for every existing test and for the 1.1 call set (compare against the baseline outputs saved in 1.1). Existing error strings are rendered from QueryError.message unchanged. Done when all 0.3.0 tests pass without edits and the 1.1 call set output is byte-identical.",
+      "status": "pending",
+      "dependencies": [
+        "1.3"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Phase 1: Claude Code Tool-Deferral Finding",
+      "status": "pending",
+      "dependencies": [],
+      "description": "Find out, from Claude Code's documentation and a quick experiment in a fresh session, whether Claude Code loads the map MCP tools at session start or defers them behind ToolSearch, and whether a server-side (tool count, instructions, annotations) or client-side setting changes that. Write the finding with sources and the exact setting, if any, to projects/active/machine-interface-for-ost/reports/tool-deferral.md and note what it implies for the server instructions and tool descriptions built in 4.2 (5.1 summarises it in README's 'Using with Claude Code' section). Do not change the owner's Claude Code configuration; say what the owner would change. Done when the report exists. Starting evidence: in the 2026-10-22 session the mcp__map__* tools were listed as deferred (loadable through ToolSearch) and the server sent no instructions."
+    },
+    {
+      "id": "1.6",
+      "title": "Phase 1 Gate",
+      "description": "Phase 1 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase1_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 2.",
+      "status": "pending",
+      "dependencies": [
+        "1.1",
+        "1.4",
+        "1.5"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Phase 2: Schema 4 and Git Fields",
+      "description": "SCHEMA_VERSION = 4. Add #[serde(default)] IndexMeta fields git_commit, git_dirty, git_branch and the imports: Vec<ImportEntry> side table (graph and SerializableGraph). Tests: schema-4 round trip; a schema-3 index loads read-only, is reported stale and is not rewritten by a query; building over a schema-5 index fails with NewerIndex and leaves it byte-identical; a 0.3.0-shaped struct (as in the existing forward-compatibility tests) deserialises a schema-4 index. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "1.6"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Phase 2: core/git.rs",
+      "description": "Implement read_git_state(root) -> GitState { commit, dirty, branch } with std::process::Command: git -C <root> rev-parse HEAD, git status --porcelain (untracked included, ignored excluded), git symbolic-ref --short -q HEAD (None when detached); each call has a 5-second timeout; any failure gives None for that field and never fails the caller. The orchestrator stores it in IndexMeta at build start. Tests with the 1.2 helper: clean repo (commit = rev-parse, dirty false, branch set), edited file (dirty true), untracked file (dirty true), ignored file (dirty false), detached HEAD (branch None), not a repository (all None), git missing via an empty PATH (all None, build succeeds). cargo test passes. Every Git call sets GIT_OPTIONAL_LOCKS=0. read_git_state takes a time budget: 5 s per call at build time, one 1.5 s budget for all calls at query time (3.1). When Git runs but fails (e.g. 'dubious ownership'), log a warning to stderr and return the first line of its stderr as error (status reports it as git_error). Extra tests: an env-capturing fake git on PATH proves GIT_OPTIONAL_LOCKS=0 is set; a fake git that exits 128 with a message gives git_error; a fake git that sleeps past the budget gives None within the budget.",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Phase 2: JavaScript Files and New Import Captures",
+      "description": "Map js, jsx, mjs and cjs to the TSX grammar, indexing symbols as for TypeScript. Add captures: require('x') and dynamic import('x') with a string literal in JS/TS; Rust use_declaration (full path text) and extern_crate_declaration. Check the 1.2 JS fixtures parse without ERROR nodes in the captured regions; if the TSX grammar fails on common JS there, add tree-sitter-javascript instead and note the choice for the CHANGELOG. Tests: JS symbols found by search; each new import form captured. Existing parser tests unchanged. cargo test passes. Skip built and minified JS: a .js/.jsx/.mjs/.cjs file named *.min.*, larger than 256 KB, or with a line longer than 1,000 characters in its first 32 KB is not indexed (TypeScript unaffected). Tests: each skip rule on the 1.2 fixtures; utils/ost/web/app.js-style hand-written JS is indexed. Rust use capture is one record per statement (a grouped use is one record).",
+      "status": "pending",
+      "dependencies": [
+        "2.1"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Phase 2: Import Records With Lines and Package Names",
+      "description": "Change FileOutline.imports to Vec<ImportRecord { module, line, text }> (1-based line, trimmed line text truncated to 200 chars) for every language that captures imports. Implement package_name(language, module) per the Specification's rules (Python first dotted segment; JS/TS scoped two segments, unscoped one, none for relative/absolute; Rust first path segment, none for crate/self/super; PHP first namespace segment; Kotlin qualified name minus last segment; Lua up to first '.'; HCL and GDScript none). Unit tests for every rule and every no-package case. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.3"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Phase 2: Keep Every Import in the Index",
+      "description": "In orchestrator pass 2, record every import as an ImportEntry (path, line, text, module, package, language, resolved) in the imports side table; resolved is true when the existing strategies linked it to an indexed file or symbol, and those still add Imports edges as today. Entries are stored sorted by path then line. Tests: relative import of an indexed fixture file is resolved; @sentry/node is unresolved with package @sentry/node; edge counts for existing non-Rust fixtures unchanged. cargo test passes. Rust resolution: crate::, self::, super:: and own-crate-name (Cargo.toml package name with - as _) paths resolve to Imports edges. The crate root is the nearest ancestor with a Cargo.toml; crate::a::b::Sym links to symbol Sym in src/a/b.rs or src/a/b/mod.rs, or to that file when the last segment is a module; each leaf of a grouped use is linked. Own-crate paths have package None. Tests on the 1.2 Rust fixture crate: each form resolves; an external crate stays unresolved with its package; this repository's Imports edge count before and after recorded in the phase report.",
+      "status": "pending",
+      "dependencies": [
+        "2.2",
+        "2.4"
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Phase 2 Gate",
+      "description": "Phase 2 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase2_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 3.",
+      "status": "pending",
+      "dependencies": [
+        "2.5"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Phase 3: Status Result With Git and Depth",
+      "description": "status_result(max_depth) returns the StatusResult: build fields, Git fields from IndexMeta, head_now and dirty_now from read_git_state at query time (one 1.5 s budget for all calls), git_error when Git failed, at_head (indexed commit == head_now and neither dirty), stale, counts, the module tree as nested {name, children} to max_depth (default 3) with truncated set when deeper paths exist, active features. Missing index gives a StatusResult with index missing (not an error) and the refresh/init instruction. TOON shows the commit line (short SHA, dirty marker, at_head) and keeps everything else as before. Tests: user-story Git cases (clean, edit after build, new commit without rebuild, no repo), max_depth 1, missing index. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Phase 3: doc_outline max_depth",
+      "description": "doc_outline_result(path, max_depth?) keeps sections whose tree depth (h1 = 1, by nesting not heading level) is <= max_depth and sets truncated when any were dropped; the item carries depth. Tests on the docs fixture: depth 1 and 2, a skipped level (h1 then h3 counts as depth 2), no max_depth equals 0.3.0 output. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Phase 3: modules Query",
+      "description": "modules_result(path_prefix?, max_depth=2): for each directory under the prefix down to max_depth levels, recursive counts of files, code_files, symbols (code symbols only), doc_files and doc_sections; root files counted under '.'; sorted by path; invalid prefix gives not_found. Tests: counts on the fixture trees, children sum to parent minus the parent's own files, max_depth 0/1/2, prefix filter. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.4",
+      "title": "Phase 3: Breadth-First Blast Radius With Counts",
+      "description": "check_blast_radius becomes a 0-1 breadth-first walk over incoming edges: following Contains upward (to the enclosing symbol and the file) costs depth 0 and those structural ancestors are never listed or counted; every other edge (Imports, Produces/Consumes, Configures) costs 1, so an importer of the target's file and an importer of the symbol are both depth 1. Each result carries its shortest depth. Summary: direct, transitive, total, files_affected (distinct dependent paths excluding the target's file), languages (sorted), matched (symbol, or file for the 0.3.0 fallback when the symbol is not in the path; neither gives not_found), target_path/target_symbol/target_line. Doc nodes stay excluded. plan (analyze_impact) also reports depth and its target. TOON: extend the existing Summary: block with direct and transitive counts and make Unique Files Affected use the files_affected definition; per-node lines keep their format; the target's own file is no longer listed. The tool description and README say direct counts dependents, not callers (there are no call edges). Tests: the 1.2 diamond (node at depths 1 and 3 reported once at 1); summary counts; Contains ancestors absent; importer of the target's file at depth 1; matched: file fallback; Rust fixture crate importers via use crate:: listed; cross-language languages list; doc nodes absent. List every updated 0.3.0 test in the phase report. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.5",
+      "title": "Phase 3: imports Query",
+      "description": "imports_result(package, path_prefix?, limit=50): exact package match, or prefix match when the query ends in '/*' or '.*'; results sorted by path then line with truncated and total; summary files and imports counts over every match, not only the limit listed; ties on one line ordered by module; schema-3 index gives index_stale; empty package gives invalid_argument. Tests: imports('@sentry/*'), imports('stripe'), imports('sentry_sdk'), imports('serde_json') across JS, TS, Python and Rust fixtures; relative and crate:: imports never match; limit and truncation. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "2.6"
+      ]
+    },
+    {
+      "id": "3.6",
+      "title": "Phase 3: Total Ordering for Every List",
+      "description": "Apply the Specification's orders in the query layer: search and query by path, line, name; blast_radius and plan by depth, path, line, name; modules by path; imports by path, line; doc tools' existing orders completed with path then byte offset. Determinism test: copy the docs and imports fixtures into two differently named tempdirs, build each twice, and assert every tool's TOON and JSON output (once 4.1 lands, JSON; until then TOON) is byte-identical except status build fields. Update only tests that pinned an old tie order, listing them in the phase report. cargo test passes. Also make target selection deterministic: when several nodes match the requested name (plan across the repository, blast_radius and fetch_symbol within a path) use the first by path then line, and report it. search ordering by path reorders whole lists, not only ties: record the before/after of the 1.1 call set in the phase report. Determinism test includes ambiguous target names.",
+      "status": "pending",
+      "dependencies": [
+        "3.4",
+        "3.5"
+      ]
+    },
+    {
+      "id": "3.7",
+      "title": "Phase 3 Gate",
+      "description": "Phase 3 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase3_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 4.",
+      "status": "pending",
+      "dependencies": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.6"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Phase 4: JSON Renderer and Envelope",
+      "description": "Create src/core/json_out.rs: to_json(tool, Result<result, QueryError>, index_info) -> serde_json::Value with the envelope in Data Models (tool, contract: 1, index {schema_version, commit, dirty, stale}, truncated, total, summary, results; or error {code, message}). JSON lists are capped by item limits only, never by characters; doc_section returns full text unless max_chars is given. Unit tests per tool on the fixtures. cargo test passes. index.state is ok, stale or missing (other index fields null when missing). JSON default item limits: 50 for search and query, 200 for blast_radius and plan; summary counts always cover every match.",
+      "status": "pending",
+      "dependencies": [
+        "3.7"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Phase 4: MCP format Argument, structured_content and New Tools",
+      "description": "Add format: Option<String> ('toon' default, 'json') to every MCP tool struct; invalid values give invalid_argument. For json, return the JSON as text content and the same object as CallToolResult.structured_content, with is_error true on errors. Register modules(path_prefix?, max_depth?) and imports(package, path_prefix?, limit?), add max_depth to status and doc_outline, and an optional limit to search, query, blast_radius and plan (omitted in TOON behaves as 0.3.0). Declare no outputSchema. init's JSON summary includes the new commit and dirty. Set the server's MCP instructions: a few lines on what the index covers and to prefer the map tools over grep for symbols, dependents, imports and docs, informed by the 1.5 finding; an MCP test checks initialize returns them. Missing or stale index gives the typed errors from every tool except status. Descriptions: modules and imports say when to use them instead of grep (wording in the Specification); the format argument says JSON is for programs and costs more tokens. Extend the existing tool-description test to all fifteen tools. MCP tests: every tool in both formats, structured_content equals parsed text, error envelopes. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.1"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Phase 4: CLI --format, --max-depth, modules and imports",
+      "description": "Add --format toon|json to every query subcommand (not build, refresh, watch or mcp), --limit where the MCP tool gained limit, --max-depth to status and doc outline, and modules and imports subcommands mirroring the MCP tools. JSON goes to stdout only; errors in JSON mode print the error envelope to stdout and exit non-zero. Integration tests for each new flag and subcommand. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.1"
+      ]
+    },
+    {
+      "id": "4.4",
+      "title": "Phase 4: Golden JSON Contract Tests",
+      "description": "Create tests/fixtures/json_contract/<tool>[_<case>].json goldens for every tool on the docs and imports fixtures (built into a fixed-name tempdir so paths are stable; status build fields and Git SHA normalised before comparison). The test fails on any added, removed or renamed field or changed value, and prints a diff. Add an UPDATE_GOLDENS=1 path that rewrites them, documented in the fixture README as a breaking-change step that needs a contract bump and CHANGELOG entry. cargo test passes. Extend the 3.6 determinism test to JSON for every tool.",
+      "status": "pending",
+      "dependencies": [
+        "4.2",
+        "4.3"
+      ]
+    },
+    {
+      "id": "4.5",
+      "title": "Phase 4: Server Mode Hardening and Tests",
+      "description": "Tracing subscriber: with_ansi(false) unless stderr is a terminal (std::io::IsTerminal); no progress output anywhere when not a TTY. Spawned-binary tests (CARGO_BIN_EXE): mcp in an empty tempdir answers initialize and status within 2 seconds saying the index is missing; another tool returns index_missing with is_error; stderr contains no \\x1b[ bytes; without -w no watcher thread starts and editing a file does not trigger a rebuild (index mtime unchanged after 2 s); stdout contains only valid JSON-RPC frames. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.2"
+      ]
+    },
+    {
+      "id": "4.6",
+      "title": "Phase 4 Gate",
+      "description": "Phase 4 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase4_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 5.",
+      "status": "pending",
+      "dependencies": [
+        "4.4",
+        "4.5"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Phase 5: README and CHANGELOG",
+      "description": "README: the 1.5 tool-deferral finding in 'Using with Claude Code' (with the exact setting, if any, for the owner to apply), the server instructions, the format argument and JSON contract (envelope, field table, error codes, contract versioning rule), status Git fields and at_head, max_depth, modules, imports and package-name rules, JavaScript support, server-mode guarantees, deterministic ordering, schema 4 upgrade note (0.3.0 watchers refuse to overwrite a schema-4 index; restart servers after upgrading so they can read Git fields and imports). CHANGELOG 0.4.0 entry including the grammar choice and JS skip rules from 2.3, Rust import resolution, the blast_radius meaning change (dependents not callers; own file no longer listed) and the list-order change. cargo test passes.",
+      "status": "pending",
+      "dependencies": [
+        "4.6"
+      ]
+    },
+    {
+      "id": "5.2",
+      "title": "Phase 5 Gate",
+      "description": "Phase 5 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase5_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 6.",
+      "status": "pending",
+      "dependencies": [
+        "5.1"
+      ]
+    },
+    {
+      "id": "6.1",
+      "title": "Phase 6: Performance, Size and Output-Size Verification",
+      "description": "Repeat the 1.1 measurements with the 0.4.0 release build: indexing time (median of 3) and index size on this repository and /opt/wde, and TOON character counts for the fixed call set. Record them against the limits (time <= +10 %, size <= +15 %, TOON unchanged except blast_radius and Rust context imports, as the Specification allows) in projects/active/machine-interface-for-ost/reports/verification.md. A breach becomes a fix task before release.",
+      "status": "pending",
+      "dependencies": [
+        "5.2"
+      ]
+    },
+    {
+      "id": "6.2",
+      "title": "Phase 6: Quality Gate and Coverage Map",
+      "description": "cargo fmt --check, cargo clippy --all-targets -- -D warnings, full cargo test (including watcher, regression and spawned-binary suites) clean. Walk every In-Scope item, Technical Constraint, User Story criterion and Verification Criterion and map each to the task and test covering it in projects/active/machine-interface-for-ost/reports/verification.md; any gap becomes a task before release.",
+      "status": "pending",
+      "dependencies": [
+        "6.1"
+      ]
+    },
+    {
+      "id": "6.3",
+      "title": "Phase 6: Version and Release Prep",
+      "description": "Bump Cargo.toml to 0.4.0; cargo publish --dry-run passes on a clean tree. Write projects/active/machine-interface-for-ost/reports/ost-manager-handoff.md mapping each item of /home/benmurray/Projects/OST-Manager/projects/p4-project-map-uplift.md (1-10) to its evidence (tests, reports), the tool-deferral finding (1.5), and a proposed ROADMAP line for OST-Manager's P4 row and P5 gate (>= 0.4.0). Do not edit the OST-Manager repository. Commit and push, then STOP: tagging v0.4.0, cargo publish, cargo install --version 0.4.0 --locked --force and restarting servers wait for the owner's go-ahead.",
+      "status": "pending",
+      "dependencies": [
+        "6.2"
+      ]
+    },
+    {
+      "id": "6.4",
+      "title": "Phase 6: Publish, Install and Archive (owner go-ahead)",
+      "description": "After the owner says go: tag v0.4.0 and push the tag, cargo publish, cargo install project-map-cli-rust --version 0.4.0 --locked --force, confirm crates.io lists 0.4.0 and the installed binary reports it, list running mcp processes for the owner to restart, then archive the feature through the spec CLI once every task is completed.",
+      "status": "pending",
+      "dependencies": [
+        "6.3"
+      ]
+    }
+  ]
+}
