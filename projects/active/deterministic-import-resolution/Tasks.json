@@ -12,7 +12,7 @@
       "id": "1.2",
       "title": "Phase 1: 0.4.0 Variance Baseline",
       "description": "With the installed 0.4.0 release binary, on copies of this repository, /home/benmurray/Projects/OST-Manager (at its current HEAD) and /opt/wde, build 5 times each and record per build: edge count, Imports edge count, resolved and unresolved import counts (from the imports side table), and blast_radius totals for a fixed list of five symbols per repository (for OST-Manager include src/ost_manager/config.py::Settings). Also time a full build (median of 3, release build). Save the commands (a script under projects/active/deterministic-import-resolution/reports/ is fine) and the table with each repository's spread to projects/active/deterministic-import-resolution/reports/baseline.md. Done when the report shows the 0.4.0 variation on at least OST-Manager.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "1.1"
       ]
@@ -39,7 +39,7 @@
       "id": "1.5",
       "title": "Phase 1 Gate",
       "description": "Phase 1 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase1_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 2.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "1.2",
         "1.3",
