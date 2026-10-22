@@ -1,6 +1,10 @@
 use crate::core::docs::{self, DocOutline, Resolution, ResolveTables, SymbolRef};
-use crate::core::graph::{EdgeType, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION};
+use crate::core::graph::{
+    EdgeType, ImportEntry, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION,
+};
+use crate::core::parser::package_name;
 use crate::core::parser::CodeParser;
+use crate::core::rust_use::{self, CrateInfo, RustTarget};
 use crate::core::utils::{normalize_rel_path, path_to_fqn, resolve_import_path};
 use crate::error::Result;
 use ignore::WalkBuilder;
@@ -91,6 +95,8 @@ impl Orchestrator {
             )));
         }
 
+        let git_state = crate::core::git::read_git_state(root, crate::core::git::GitBudget::BUILD);
+
         let mut outlines = Vec::new();
         let mut fqn_to_node = HashMap::new();
         let mut path_to_node = HashMap::new();
@@ -142,6 +148,10 @@ impl Orchestrator {
                         "py" | "rs"
                             | "ts"
                             | "tsx"
+                            | "js"
+                            | "jsx"
+                            | "mjs"
+                            | "cjs"
                             | "kt"
                             | "lua"
                             | "php"
@@ -156,6 +166,11 @@ impl Orchestrator {
                             | "yml"
                     );
                 if is_supported {
+                    if crate::core::parser::is_javascript_extension(extension)
+                        && crate::core::parser::is_skipped_javascript(path)
+                    {
+                        continue;
+                    }
                     match self.parser.parse_file(path) {
                         Ok(outline) => {
                             let norm_path = normalize_rel_path(root, &outline.path);
@@ -225,52 +240,96 @@ impl Orchestrator {
             }
         }
 
-        // Pass 2: Resolve imports and create edges
+        // Pass 2: Resolve imports and create edges; every import is also kept in the side table
+        let mut import_entries: Vec<ImportEntry> = Vec::new();
+        let mut crate_cache: HashMap<String, CrateInfo> = HashMap::new();
+        let symbols_by_file = symbol_lookup(&self.graph.graph);
         for outline in outlines {
             let norm_from = normalize_rel_path(root, &outline.path);
-            if let Some(&from_node) = path_to_node
+            let Some(&from_node) = path_to_node
                 .get(&norm_from)
                 .or_else(|| path_to_node.get(&outline.path))
-            {
-                for imp in outline.imports {
-                    // Strategy 1: FQN Match (Python/General)
-                    if let Some(&to_node) = fqn_to_node.get(&imp) {
-                        self.graph.add_edge(from_node, to_node, EdgeType::Imports);
-                    } else {
-                        // Strategy 2: Relative Path Resolution (TypeScript)
-                        let resolved_rel = resolve_import_path(&norm_from, &imp);
-                        let norm_resolved = normalize_rel_path(root, &resolved_rel);
-
-                        // Try matching resolved path with common TS/Terraform extensions
-                        let mut found = false;
-                        for ext in &["", ".ts", ".tsx", "/index.ts", "/index.tsx", "/main.tf"] {
-                            let candidate = format!("{}{}", norm_resolved, ext);
-                            if let Some(&to_node) = path_to_node.get(&candidate) {
-                                self.graph.add_edge(from_node, to_node, EdgeType::Imports);
-                                found = true;
-                                break;
-                            }
+            else {
+                continue;
+            };
+            let is_rust = outline.language == "rust";
+            let krate = is_rust.then(|| crate_of(root, &norm_from, &mut crate_cache));
+            for record in outline.imports {
+                let imp = record.module;
+                let mut resolved = false;
+                if let Some(krate) = &krate {
+                    for leaf in rust_use::expand_use(&imp) {
+                        let has_file = |p: &str| path_to_node.contains_key(p);
+                        let target = match rust_use::resolve(&leaf, &norm_from, krate, &has_file) {
+                            Some(RustTarget::Symbol { file, name }) => symbols_by_file
+                                .get(&(file.clone(), name))
+                                .copied()
+                                .or_else(|| path_to_node.get(&file).copied()),
+                            Some(RustTarget::File(file)) => path_to_node.get(&file).copied(),
+                            None => None,
+                        };
+                        if let Some(to_node) = target {
+                            self.graph.add_edge(from_node, to_node, EdgeType::Imports);
+                            resolved = true;
                         }
+                    }
+                } else if let Some(&to_node) = fqn_to_node.get(&imp) {
+                    // Strategy 1: FQN Match (Python/General)
+                    self.graph.add_edge(from_node, to_node, EdgeType::Imports);
+                    resolved = true;
+                } else {
+                    // Strategy 2: Relative Path Resolution (TypeScript)
+                    let resolved_rel = resolve_import_path(&norm_from, &imp);
+                    let norm_resolved = normalize_rel_path(root, &resolved_rel);
 
-                        // Strategy 3: FQN Suffix match (Fallback)
-                        if !found {
-                            let matching_fqn = fqn_to_node.keys().find(|&k| {
-                                k.ends_with(&imp)
-                                    || imp.ends_with(k)
-                                    || (k.contains('.')
-                                        && imp.contains('.')
-                                        && k.split('.').next_back() == imp.split('.').next_back()
-                                        && k.split('.').rev().nth(1) == imp.split('.').rev().nth(1))
-                            });
-                            if let Some(key) = matching_fqn {
-                                let &to_node = fqn_to_node.get(key).unwrap();
-                                self.graph.add_edge(from_node, to_node, EdgeType::Imports);
-                            }
+                    // Try matching resolved path with common TS/Terraform extensions
+                    for ext in &["", ".ts", ".tsx", "/index.ts", "/index.tsx", "/main.tf"] {
+                        let candidate = format!("{}{}", norm_resolved, ext);
+                        if let Some(&to_node) = path_to_node.get(&candidate) {
+                            self.graph.add_edge(from_node, to_node, EdgeType::Imports);
+                            resolved = true;
+                            break;
+                        }
+                    }
+
+                    // Strategy 3: FQN Suffix match (Fallback)
+                    if !resolved {
+                        let matching_fqn = fqn_to_node.keys().find(|&k| {
+                            k.ends_with(&imp)
+                                || imp.ends_with(k)
+                                || (k.contains('.')
+                                    && imp.contains('.')
+                                    && k.split('.').next_back() == imp.split('.').next_back()
+                                    && k.split('.').rev().nth(1) == imp.split('.').rev().nth(1))
+                        });
+                        if let Some(key) = matching_fqn {
+                            let &to_node = fqn_to_node.get(key).unwrap();
+                            self.graph.add_edge(from_node, to_node, EdgeType::Imports);
+                            resolved = true;
                         }
                     }
                 }
+
+                let mut package = package_name(&outline.language, &imp);
+                if let (Some(pkg), Some(krate)) = (&package, &krate) {
+                    if krate.name.as_deref() == Some(pkg.as_str()) {
+                        package = None;
+                    }
+                }
+                import_entries.push(ImportEntry {
+                    path: norm_from.clone(),
+                    line: record.line,
+                    text: record.text,
+                    module: imp,
+                    package,
+                    language: outline.language.clone(),
+                    resolved,
+                });
             }
         }
+        import_entries
+            .sort_by(|a, b| (&a.path, a.line, &a.module).cmp(&(&b.path, b.line, &b.module)));
+        self.graph.imports = import_entries;
 
         // Pass 3: documentation and API nodes. Needs the finished code symbol table.
         let parsed_docs = self.doc_pass(doc_inputs);
@@ -323,6 +382,9 @@ impl Orchestrator {
             unresolved_mention_count: stats.unresolved,
             ambiguous_mention_count: stats.ambiguous,
             api_operation_count: count_of(NodeType::ApiOperation),
+            git_commit: git_state.commit,
+            git_dirty: git_state.dirty,
+            git_branch: git_state.branch,
         });
 
         Ok(())
@@ -756,6 +818,50 @@ fn exchange_paths(a: &Path, b: &Path) -> std::io::Result<()> {
     } else {
         Err(std::io::Error::last_os_error())
     }
+}
+
+/// (file path, symbol name) to the first symbol node of that name in the file.
+fn symbol_lookup(
+    graph: &petgraph::graph::DiGraph<NodeData, EdgeType>,
+) -> HashMap<(String, String), NodeIndex> {
+    let mut map = HashMap::new();
+    for idx in graph.node_indices() {
+        let n = &graph[idx];
+        if n.node_type == NodeType::Symbol {
+            map.entry((n.path.clone(), n.name.clone())).or_insert(idx);
+        }
+    }
+    map
+}
+
+/// The crate containing the file `rel`: its nearest ancestor directory with a Cargo.toml.
+fn crate_of(root: &Path, rel: &str, cache: &mut HashMap<String, CrateInfo>) -> CrateInfo {
+    let mut dir = rel.rsplit_once('/').map_or("", |(d, _)| d).to_string();
+    let start = dir.clone();
+    if let Some(hit) = cache.get(&start) {
+        return hit.clone();
+    }
+    let info = loop {
+        let manifest = root.join(&dir).join("Cargo.toml");
+        if let Ok(text) = std::fs::read_to_string(&manifest) {
+            break CrateInfo {
+                dir: dir.clone(),
+                name: rust_use::crate_name(&text),
+            };
+        }
+        match dir.rsplit_once('/') {
+            Some((parent, _)) => dir = parent.to_string(),
+            None if !dir.is_empty() => dir.clear(),
+            None => {
+                break CrateInfo {
+                    dir: String::new(),
+                    name: None,
+                }
+            }
+        }
+    };
+    cache.insert(start, info.clone());
+    info
 }
 
 /// Forward guard: refuse to replace an index written by a newer schema.

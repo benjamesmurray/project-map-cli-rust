@@ -86,6 +86,10 @@ impl QueryEngine {
         self.graph.is_stale()
     }
 
+    pub fn lacks_docs(&self) -> bool {
+        self.graph.lacks_docs()
+    }
+
     pub fn find_symbols(&self, query: &str) -> Vec<NodeData> {
         let keywords: Vec<String> = query
             .to_lowercase()

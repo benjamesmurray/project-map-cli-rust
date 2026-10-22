@@ -5,12 +5,17 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-/// Index schema written by this build. 3 adds documentation and API nodes.
-pub const SCHEMA_VERSION: u32 = 3;
+/// Index schema written by this build. 3 adds documentation and API nodes;
+/// 4 adds Git fields in the meta block and the imports side table.
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// Shown by `status` and returned by every doc tool when the index predates schema 3.
 pub const STALE_INDEX_MESSAGE: &str = "STALE: Index predates documentation indexing (schema < 3). \
 Code tools still work; rebuild with `project-map refresh` or the MCP `init` tool to enable doc tools.";
+
+/// Shown by `status` when the index has doc data but predates schema 4.
+pub const OLD_SCHEMA_MESSAGE: &str = "STALE: Index predates Git and import records (schema < 4). \
+Doc and code tools still work; rebuild with `project-map refresh` or the MCP `init` tool to add them.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum NodeType {
@@ -137,6 +142,33 @@ pub struct IndexMeta {
     pub ambiguous_mention_count: usize,
     #[serde(default)]
     pub api_operation_count: usize,
+    // Schema 4 Git state at build start; None when unavailable.
+    /// Full 40-hex SHA of HEAD.
+    #[serde(default)]
+    pub git_commit: Option<String>,
+    #[serde(default)]
+    pub git_dirty: Option<bool>,
+    /// None when HEAD is detached.
+    #[serde(default)]
+    pub git_branch: Option<String>,
+}
+
+/// One import statement, kept whether or not it resolved to an indexed target.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportEntry {
+    /// Repository-relative, forward slashes.
+    pub path: String,
+    /// 1-based.
+    pub line: usize,
+    /// Trimmed import line, at most 200 chars.
+    pub text: String,
+    /// As written, e.g. "@sentry/node" or "serde_json::Value".
+    pub module: String,
+    /// Normalised external package; None for relative, crate-local or file imports.
+    pub package: Option<String>,
+    pub language: String,
+    /// Linked to an indexed file or symbol in pass 2.
+    pub resolved: bool,
 }
 
 /// Recognised YAML frontmatter of a Markdown file.
@@ -177,6 +209,8 @@ struct SerializableGraph {
     doc_meta: BTreeMap<String, DocMeta>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     doc_terms: BTreeMap<String, Vec<DocTerm>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    imports: Vec<ImportEntry>,
 }
 
 /// Reads only the meta block; nodes and edges are skipped.
@@ -194,6 +228,8 @@ pub struct ProjectGraph {
     pub doc_meta: BTreeMap<String, DocMeta>,
     /// Terms keyed by normalised directory.
     pub doc_terms: BTreeMap<String, Vec<DocTerm>>,
+    /// Every import statement, sorted by path then line.
+    pub imports: Vec<ImportEntry>,
 }
 
 impl Default for ProjectGraph {
@@ -209,15 +245,21 @@ impl ProjectGraph {
             meta: None,
             doc_meta: BTreeMap::new(),
             doc_terms: BTreeMap::new(),
+            imports: Vec::new(),
         }
     }
 
-    /// True for a legacy index (no meta) or one written with schema < 3.
+    /// True for a legacy index (no meta) or one written with an older schema.
     /// Such an index is still served read-only; it is never rewritten here.
     pub fn is_stale(&self) -> bool {
         self.meta
             .as_ref()
             .is_none_or(|m| m.schema_version < SCHEMA_VERSION)
+    }
+
+    /// True when the index has no doc nodes (no meta or schema < 3).
+    pub fn lacks_docs(&self) -> bool {
+        self.meta.as_ref().is_none_or(|m| m.schema_version < 3)
     }
 
     pub fn add_node(&mut self, data: NodeData) -> NodeIndex {
@@ -246,6 +288,7 @@ impl ProjectGraph {
             edges,
             doc_meta: self.doc_meta.clone(),
             doc_terms: self.doc_terms.clone(),
+            imports: self.imports.clone(),
         };
         let json = serde_json::to_string_pretty(&serializable)?;
         Self::save_atomic_with_hook(path, &json, |_| Ok(()))
@@ -325,6 +368,7 @@ impl ProjectGraph {
             meta: serializable.meta,
             doc_meta: serializable.doc_meta,
             doc_terms: serializable.doc_terms,
+            imports: serializable.imports,
         })
     }
 }
@@ -583,7 +627,7 @@ mod tests {
         );
     }
 
-    fn sample_v3_graph() -> ProjectGraph {
+    fn sample_v4_graph() -> ProjectGraph {
         let mut g = ProjectGraph::new();
         let file = g.add_node(NodeData {
             path: "docs/adr/004.md".to_string(),
@@ -612,7 +656,19 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             tool_version: "0.3.0".to_string(),
             section_count: 1,
+            git_commit: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            git_dirty: Some(true),
+            git_branch: None,
             ..Default::default()
+        });
+        g.imports.push(ImportEntry {
+            path: "web/app.js".to_string(),
+            line: 3,
+            text: "import * as Sentry from '@sentry/node';".to_string(),
+            module: "@sentry/node".to_string(),
+            package: Some("@sentry/node".to_string()),
+            language: "javascript".to_string(),
+            resolved: false,
         });
         g.doc_meta.insert(
             "docs/adr/004.md".to_string(),
@@ -635,18 +691,20 @@ mod tests {
     }
 
     #[test]
-    fn test_v3_side_tables_round_trip_through_save_and_load() {
+    fn test_v4_side_tables_round_trip_through_save_and_load() {
         use tempfile::tempdir;
         let temp = tempdir().expect("tempdir");
         let path = temp.path().join("index.json");
 
-        let original = sample_v3_graph();
+        let original = sample_v4_graph();
         original.save(&path).expect("save");
         let loaded = ProjectGraph::load(&path).expect("load");
 
         assert_eq!(loaded.meta, original.meta);
         assert_eq!(loaded.doc_meta, original.doc_meta);
         assert_eq!(loaded.doc_terms, original.doc_terms);
+        assert_eq!(loaded.imports, original.imports);
+        assert_eq!(loaded.imports.len(), 1);
         assert_eq!(
             loaded.graph[NodeIndex::new(1)].node_type,
             NodeType::DocSection
@@ -703,7 +761,7 @@ mod tests {
         use tempfile::tempdir;
         let temp = tempdir().expect("tempdir");
         let path = temp.path().join("index.json");
-        sample_v3_graph().save(&path).expect("save");
+        sample_v4_graph().save(&path).expect("save");
 
         let json = fs::read_to_string(&path).unwrap();
         let old_reader: V020SerializableGraph =
@@ -756,5 +814,98 @@ mod tests {
             entries
         );
         assert_eq!(entries[0], "index.json");
+    }
+
+    #[test]
+    fn test_schema_3_index_loads_stale_with_empty_imports() {
+        let v3_json = r#"{
+            "meta": {
+                "schema_version": 3,
+                "tool_version": "0.3.0",
+                "root": "/tmp/x",
+                "built_at": "2026-10-01T00:00:00Z",
+                "builder_pid": 1,
+                "file_count": 0,
+                "symbol_count": 0,
+                "edge_count": 0,
+                "section_count": 2
+            },
+            "nodes": [],
+            "edges": []
+        }"#;
+        let graph: SerializableGraph = serde_json::from_str(v3_json).expect("schema 3 parses");
+        let meta = graph.meta.expect("meta");
+        assert_eq!(meta.section_count, 2);
+        assert_eq!(meta.git_commit, None);
+        assert_eq!(meta.git_dirty, None);
+        assert_eq!(meta.git_branch, None);
+        assert!(graph.imports.is_empty(), "missing side table must default");
+
+        let mut g = ProjectGraph::new();
+        g.meta = Some(IndexMeta {
+            schema_version: 3,
+            ..Default::default()
+        });
+        assert!(g.is_stale());
+        assert!(!g.lacks_docs(), "schema 3 keeps its doc data");
+        g.meta.as_mut().unwrap().schema_version = 2;
+        assert!(g.lacks_docs());
+        g.meta.as_mut().unwrap().schema_version = SCHEMA_VERSION;
+        assert!(!g.is_stale());
+    }
+
+    #[test]
+    fn test_forward_compatibility_0_3_0_reader_with_v4_index() {
+        // Copy of the 0.3.0 meta and graph: no Git fields, no imports table.
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct V030IndexMeta {
+            schema_version: u32,
+            tool_version: String,
+            root: String,
+            built_at: String,
+            builder_pid: u32,
+            file_count: usize,
+            symbol_count: usize,
+            edge_count: usize,
+            #[serde(default)]
+            doc_file_count: usize,
+            #[serde(default)]
+            section_count: usize,
+            #[serde(default)]
+            reference_count: usize,
+            #[serde(default)]
+            unresolved_mention_count: usize,
+            #[serde(default)]
+            ambiguous_mention_count: usize,
+            #[serde(default)]
+            api_operation_count: usize,
+        }
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct V030SerializableGraph {
+            #[serde(default)]
+            meta: Option<V030IndexMeta>,
+            nodes: Vec<NodeData>,
+            edges: Vec<(usize, usize, EdgeType)>,
+            #[serde(default)]
+            doc_meta: BTreeMap<String, DocMeta>,
+            #[serde(default)]
+            doc_terms: BTreeMap<String, Vec<DocTerm>>,
+        }
+
+        use tempfile::tempdir;
+        let temp = tempdir().expect("tempdir");
+        let path = temp.path().join("index.json");
+        sample_v4_graph().save(&path).expect("save");
+
+        let json = fs::read_to_string(&path).unwrap();
+        assert!(json.contains("\"git_commit\""));
+        assert!(json.contains("\"imports\""));
+        let old_reader: V030SerializableGraph =
+            serde_json::from_str(&json).expect("0.3.0 reader must parse a v4 index");
+        assert_eq!(old_reader.meta.unwrap().schema_version, SCHEMA_VERSION);
+        assert_eq!(old_reader.nodes.len(), 2);
+        assert_eq!(old_reader.doc_meta.len(), 1);
     }
 }

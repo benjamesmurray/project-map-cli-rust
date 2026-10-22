@@ -1,11 +1,13 @@
 pub mod doc_queries;
 pub mod docs;
+pub mod git;
 pub mod graph;
 pub mod lock;
 pub mod orchestrator;
 pub mod parser;
 pub mod query_engine;
 pub mod results;
+pub mod rust_use;
 pub mod toon;
 pub mod typed_queries;
 pub mod utils;

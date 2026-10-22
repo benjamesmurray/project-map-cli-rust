@@ -433,6 +433,57 @@ fn test_fresh_index_is_not_stale() {
     assert!(!status.contains(STALE_INDEX_MESSAGE));
 }
 
+/// Task 2.1: a schema-3 index (0.3.0) loads read-only, is reported stale and
+/// is not rewritten by status, query or search; its doc data still works.
+#[test]
+fn test_schema_3_index_is_stale_and_never_rewritten() {
+    use project_map_cli_rust::core::graph::{OLD_SCHEMA_MESSAGE, STALE_INDEX_MESSAGE};
+
+    let temp = tempdir().expect("tempdir");
+    let out_dir = temp.path().join(".project-map");
+    let index = seed_index_with_schema(&out_dir, 3);
+    let before = snapshot_dir(&out_dir);
+
+    let engine = QueryEngine::load(&index).expect("schema 3 must load");
+    assert!(engine.is_stale());
+    assert!(!engine.lacks_docs());
+    assert_eq!(engine.meta().unwrap().git_commit, None);
+
+    let status = ToonFormatter::format_full_status(
+        Some(&engine),
+        None,
+        Some(&out_dir),
+        index.to_str(),
+        None,
+        &[],
+    );
+    assert!(status.contains(OLD_SCHEMA_MESSAGE), "{status}");
+    assert!(!status.contains(STALE_INDEX_MESSAGE), "{status}");
+
+    let exe = env!("CARGO_BIN_EXE_project-map-cli-rust");
+    let idx_arg = out_dir.to_str().unwrap();
+    for args in [
+        vec!["status", "-i", idx_arg],
+        vec!["find", "-q", "hello", "-i", idx_arg],
+        vec!["search", "hello", "-i", idx_arg],
+    ] {
+        let res = std::process::Command::new(exe)
+            .args(&args)
+            .current_dir(temp.path())
+            .output()
+            .expect("run cli");
+        if args[0] == "status" {
+            let stdout = String::from_utf8_lossy(&res.stdout);
+            assert!(stdout.contains(OLD_SCHEMA_MESSAGE), "{stdout}");
+        }
+    }
+    assert_eq!(
+        snapshot_dir(&out_dir),
+        before,
+        "no rewrite, backup or temp file"
+    );
+}
+
 /// Writes the schema-2 compatibility fixture with its schema_version replaced,
 /// laid out as a real build does (`latest -> backups/<dir>`), and returns the index path.
 fn seed_index_with_schema(out_dir: &Path, schema_version: u32) -> std::path::PathBuf {
@@ -480,6 +531,7 @@ fn test_forward_guard_refuses_to_overwrite_newer_index() {
     match rebuild_and_publish(&root, &out_dir) {
         Err(AppError::NewerIndex { found, supported }) => {
             assert_eq!(found, SCHEMA_VERSION + 1);
+            assert_eq!(found, 5, "schema 5 is the first newer than this build");
             assert_eq!(supported, SCHEMA_VERSION);
         }
         other => panic!("expected NewerIndex, got {:?}", other.map(|_| ())),

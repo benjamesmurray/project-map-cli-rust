@@ -184,7 +184,7 @@ impl QueryEngine {
 impl QueryEngine {
     /// The shared stale message for an index without schema 3 doc data.
     fn require_current(&self) -> Result<(), String> {
-        if self.is_stale() {
+        if self.lacks_docs() {
             Err(STALE_INDEX_MESSAGE.to_string())
         } else {
             Ok(())

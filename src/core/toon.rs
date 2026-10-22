@@ -1,7 +1,9 @@
 use crate::core::doc_queries::{
     ApiFileView, DocLinksView, DocOutlineView, DocSearch, DocSectionView, DocTermsView,
 };
-use crate::core::graph::{EntityMatch, NodeData, NodeType, STALE_INDEX_MESSAGE};
+use crate::core::graph::{
+    EntityMatch, NodeData, NodeType, OLD_SCHEMA_MESSAGE, STALE_INDEX_MESSAGE,
+};
 use crate::core::query_engine::QueryEngine;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -294,7 +296,7 @@ impl ToonFormatter {
                 output.push_str(&format!("Symbols: {}\n", meta.symbol_count));
                 output.push_str(&format!("Edges: {}\n", meta.edge_count));
                 // A schema-2 index has no doc counts; the stale line below says so.
-                if !engine.is_stale() {
+                if !engine.lacks_docs() {
                     output.push_str(&format!("Doc Files: {}\n", meta.doc_file_count));
                     output.push_str(&format!("Doc Sections: {}\n", meta.section_count));
                     output.push_str(&format!("Doc References: {}\n", meta.reference_count));
@@ -315,7 +317,11 @@ impl ToonFormatter {
                 output.push_str("WARNING: Legacy index without metadata block.\n");
             }
             if engine.is_stale() {
-                output.push_str(STALE_INDEX_MESSAGE);
+                output.push_str(if engine.lacks_docs() {
+                    STALE_INDEX_MESSAGE
+                } else {
+                    OLD_SCHEMA_MESSAGE
+                });
                 output.push('\n');
             }
 

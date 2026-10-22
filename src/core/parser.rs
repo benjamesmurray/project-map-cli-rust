@@ -18,12 +18,26 @@ pub struct Symbol {
     pub role: Option<String>,
 }
 
+/// One import statement of a source file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportRecord {
+    /// As written, e.g. "@sentry/node" or "serde_json::Value".
+    pub module: String,
+    /// 1-based line of the module.
+    pub line: usize,
+    /// That source line, trimmed and cut to 200 characters.
+    pub text: String,
+}
+
+/// Longest `ImportRecord::text`, in characters.
+const IMPORT_TEXT_CHARS: usize = 200;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileOutline {
     pub path: String,
     pub language: String,
     pub symbols: Vec<Symbol>,
-    pub imports: Vec<String>,
+    pub imports: Vec<ImportRecord>,
 }
 
 pub struct CodeParser {
@@ -59,6 +73,13 @@ impl CodeParser {
             return self.parse_sql_file(path);
         }
 
+        if is_javascript_extension(extension) && is_skipped_javascript(path) {
+            return Err(AppError::Parser(format!(
+                "Skipped built or minified JavaScript: {}",
+                path.display()
+            )));
+        }
+
         let (language, ts_language) = match extension {
             "py" => ("python", tree_sitter_python::LANGUAGE.into()),
             "rs" => ("rust", tree_sitter_rust::LANGUAGE.into()),
@@ -66,7 +87,10 @@ impl CodeParser {
                 "typescript",
                 tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             ),
-            "tsx" => ("typescript", tree_sitter_typescript::LANGUAGE_TSX.into()),
+            // JavaScript is parsed with the TSX grammar, which accepts JS and JSX.
+            "tsx" | "js" | "jsx" | "mjs" | "cjs" => {
+                ("typescript", tree_sitter_typescript::LANGUAGE_TSX.into())
+            }
             "kt" => ("kotlin", tree_sitter_kotlin_ng::LANGUAGE.into()),
             "lua" => ("lua", tree_sitter_lua::LANGUAGE.into()),
             "php" => ("php", tree_sitter_php::LANGUAGE_PHP.into()),
@@ -116,6 +140,8 @@ impl CodeParser {
                        ((function_item name: (identifier) @name) @function)
                        ((trait_item name: (type_identifier) @name) @trait)
                        ((impl_item type: (_) @name) @impl)
+                       (use_declaration argument: (_) @import)
+                       (extern_crate_declaration name: (identifier) @import)
                        ((line_comment) @doc (#match? @doc \"^///\"))
                        ((block_comment) @doc (#match? @doc \"^/\\\\*\\\\*\"))",
             "typescript" => "((class_declaration name: (type_identifier) @name) @class)
@@ -131,6 +157,8 @@ impl CodeParser {
                              (internal_module name: (identifier) @name) @module
                              (import_statement source: (string (string_fragment) @import))
                              (export_statement source: (string (string_fragment) @import))
+                             (call_expression function: (identifier) @func_name arguments: (arguments (string (string_fragment) @import)) (#eq? @func_name \"require\"))
+                             (call_expression function: (import) arguments: (arguments (string (string_fragment) @import)))
                              (export_statement (export_clause (export_specifier name: (identifier) @name)) @export)
                              (comment) @doc",
             "kotlin" => "((class_declaration name: (identifier) @name) @class)
@@ -214,12 +242,21 @@ impl CodeParser {
                     if language == "php" {
                         imp = imp.replace("\\", ".");
                     }
+                    if language == "rust" {
+                        imp = imp.split_whitespace().collect::<Vec<_>>().join(" ");
+                    }
                     if language == "gdscript" {
                         imp = imp.replace("res://", "");
                         imp = imp.trim_matches('"').trim_matches('\'').to_string();
                     }
                     if !imp.is_empty() {
-                        imports.push(imp);
+                        let row = capture.node.start_position().row;
+                        let text = content.lines().nth(row).unwrap_or("").trim();
+                        imports.push(ImportRecord {
+                            module: imp,
+                            line: row + 1,
+                            text: text.chars().take(IMPORT_TEXT_CHARS).collect(),
+                        });
                     }
                     is_import = true;
                     break;
@@ -924,6 +961,96 @@ impl CodeParser {
     }
 }
 
+/// The external package an import refers to, from the import string alone.
+/// None for relative, absolute, crate-local and file imports, and for languages
+/// that import files (HCL, GDScript).
+pub fn package_name(language: &str, module: &str) -> Option<String> {
+    let module = module.trim();
+    let first = |sep: &str| module.split(sep).next().filter(|s| !s.is_empty());
+    let name = match language {
+        "python" | "lua" => {
+            if module.starts_with('.') {
+                None
+            } else {
+                first(".")
+            }
+        }
+        "typescript" | "javascript" => {
+            if module.starts_with('.') || module.starts_with('/') || module.contains("://") {
+                None
+            } else if module.starts_with('@') {
+                let mut parts = module.splitn(3, '/');
+                return match (parts.next(), parts.next()) {
+                    (Some(scope), Some(pkg)) if !pkg.is_empty() => Some(format!("{scope}/{pkg}")),
+                    (Some(scope), _) => Some(scope.to_string()),
+                    _ => None,
+                };
+            } else {
+                first("/")
+            }
+        }
+        "rust" => module
+            .trim_start_matches(':')
+            .split("::")
+            .next()
+            .filter(|s| !s.is_empty() && !s.starts_with('{'))
+            .filter(|s| !matches!(*s, "crate" | "self" | "super")),
+        "php" => module
+            .trim_start_matches('.')
+            .split('.')
+            .next()
+            .filter(|s| !s.is_empty()),
+        "kotlin" => module
+            .rsplit_once('.')
+            .map(|(pkg, _)| pkg)
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    };
+    name.map(str::to_string)
+}
+
+/// Largest JavaScript file that is indexed; bigger ones are build output.
+const MAX_JS_BYTES: u64 = 256 * 1024;
+/// A line longer than this in the first 32 KB marks a bundle.
+const MAX_JS_LINE_CHARS: usize = 1000;
+const JS_SNIFF_BYTES: usize = 32 * 1024;
+
+pub fn is_javascript_extension(extension: &str) -> bool {
+    matches!(extension, "js" | "jsx" | "mjs" | "cjs")
+}
+
+/// True for built or minified JavaScript, which is not indexed: a file named `*.min.*`,
+/// larger than 256 KB, or with a line over 1,000 characters in its first 32 KB.
+pub fn is_skipped_javascript(path: &Path) -> bool {
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if name.contains(".min.") {
+        return true;
+    }
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    if file
+        .metadata()
+        .map(|m| m.len() > MAX_JS_BYTES)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    use std::io::Read;
+    let mut head = Vec::with_capacity(JS_SNIFF_BYTES);
+    if file
+        .by_ref()
+        .take(JS_SNIFF_BYTES as u64)
+        .read_to_end(&mut head)
+        .is_err()
+    {
+        return false;
+    }
+    String::from_utf8_lossy(&head)
+        .split('\n')
+        .any(|line| line.chars().count() > MAX_JS_LINE_CHARS)
+}
+
 pub fn is_env_var_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 100
@@ -1420,5 +1547,134 @@ def send_events():
             .collect();
         assert!(py_env_vars.contains(&"DB_PASSWORD"));
         assert!(py_env_vars.contains(&"API_KEY"));
+    }
+
+    #[test]
+    fn test_package_name_python_and_lua() {
+        assert_eq!(
+            package_name("python", "sentry_sdk.integrations").as_deref(),
+            Some("sentry_sdk")
+        );
+        assert_eq!(package_name("python", "json").as_deref(), Some("json"));
+        assert_eq!(package_name("python", ".helpers"), None);
+        assert_eq!(package_name("python", ""), None);
+        assert_eq!(
+            package_name("lua", "socket.http").as_deref(),
+            Some("socket")
+        );
+        assert_eq!(package_name("lua", "cjson").as_deref(), Some("cjson"));
+        assert_eq!(package_name("lua", ".local"), None);
+    }
+
+    #[test]
+    fn test_package_name_javascript_and_typescript() {
+        for lang in ["typescript", "javascript"] {
+            assert_eq!(
+                package_name(lang, "@sentry/node").as_deref(),
+                Some("@sentry/node")
+            );
+            assert_eq!(
+                package_name(lang, "@sentry/node/tracing").as_deref(),
+                Some("@sentry/node")
+            );
+            assert_eq!(package_name(lang, "@sentry").as_deref(), Some("@sentry"));
+            assert_eq!(package_name(lang, "stripe").as_deref(), Some("stripe"));
+            assert_eq!(
+                package_name(lang, "stripe/lib/x").as_deref(),
+                Some("stripe")
+            );
+            assert_eq!(
+                package_name(lang, "posthog-js").as_deref(),
+                Some("posthog-js")
+            );
+            assert_eq!(package_name(lang, "./util.js"), None);
+            assert_eq!(package_name(lang, "../ts/shared"), None);
+            assert_eq!(package_name(lang, "/abs/path"), None);
+            assert_eq!(package_name(lang, "https://deno.land/x/mod.ts"), None);
+            assert_eq!(package_name(lang, ""), None);
+        }
+    }
+
+    #[test]
+    fn test_package_name_rust() {
+        assert_eq!(
+            package_name("rust", "serde_json::Value").as_deref(),
+            Some("serde_json")
+        );
+        assert_eq!(
+            package_name("rust", "serde_json").as_deref(),
+            Some("serde_json")
+        );
+        assert_eq!(
+            package_name("rust", "std::collections::HashMap").as_deref(),
+            Some("std")
+        );
+        assert_eq!(package_name("rust", "core::fmt").as_deref(), Some("core"));
+        assert_eq!(
+            package_name("rust", "alloc::vec::Vec").as_deref(),
+            Some("alloc")
+        );
+        assert_eq!(
+            package_name("rust", "::serde::Serialize").as_deref(),
+            Some("serde")
+        );
+        assert_eq!(
+            package_name("rust", "tokio::{fs, io}").as_deref(),
+            Some("tokio")
+        );
+        assert_eq!(package_name("rust", "crate::a::b::Sym"), None);
+        assert_eq!(package_name("rust", "self::b::Sym"), None);
+        assert_eq!(package_name("rust", "super::c::Gamma"), None);
+        assert_eq!(package_name("rust", "crate"), None);
+        assert_eq!(package_name("rust", "{a, b}"), None);
+    }
+
+    #[test]
+    fn test_package_name_php_kotlin_and_file_importing_languages() {
+        assert_eq!(
+            package_name("php", "Stripe.StripeClient").as_deref(),
+            Some("Stripe")
+        );
+        assert_eq!(
+            package_name("php", ".Sentry.State.Scope").as_deref(),
+            Some("Sentry")
+        );
+        assert_eq!(package_name("php", "Money").as_deref(), Some("Money"));
+        assert_eq!(
+            package_name("kotlin", "io.sentry.Sentry").as_deref(),
+            Some("io.sentry")
+        );
+        assert_eq!(
+            package_name("kotlin", "kotlinx.coroutines.flow.Flow").as_deref(),
+            Some("kotlinx.coroutines.flow")
+        );
+        assert_eq!(package_name("kotlin", "Single"), None);
+        assert_eq!(package_name("hcl", "./modules/vpc"), None);
+        assert_eq!(package_name("gdscript", "scripts/player.gd"), None);
+        assert_eq!(package_name("vue", "anything"), None);
+    }
+
+    #[test]
+    fn test_import_record_has_line_and_trimmed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("m.py");
+        let long = format!("import os  # {}", "c".repeat(300));
+        std::fs::write(
+            &file,
+            format!("x = 1\n    import json, sentry_sdk\n{long}\n"),
+        )
+        .unwrap();
+        let outline = CodeParser::new().parse_file(&file).unwrap();
+        let got: Vec<(&str, usize, usize)> = outline
+            .imports
+            .iter()
+            .map(|r| (r.module.as_str(), r.line, r.text.chars().count()))
+            .collect();
+        assert_eq!(
+            got,
+            [("json", 2, 23), ("sentry_sdk", 2, 23), ("os", 3, 200)]
+        );
+        assert_eq!(outline.imports[0].text, "import json, sentry_sdk");
+        assert!(outline.imports[2].text.starts_with("import os  # ccc"));
     }
 }

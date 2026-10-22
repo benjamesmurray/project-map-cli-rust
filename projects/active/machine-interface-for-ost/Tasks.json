@@ -55,7 +55,7 @@
       "id": "2.1",
       "title": "Phase 2: Schema 4 and Git Fields",
       "description": "SCHEMA_VERSION = 4. Add #[serde(default)] IndexMeta fields git_commit, git_dirty, git_branch and the imports: Vec<ImportEntry> side table (graph and SerializableGraph). Tests: schema-4 round trip; a schema-3 index loads read-only, is reported stale and is not rewritten by a query; building over a schema-5 index fails with NewerIndex and leaves it byte-identical; a 0.3.0-shaped struct (as in the existing forward-compatibility tests) deserialises a schema-4 index. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.6"
       ]
@@ -64,7 +64,7 @@
       "id": "2.2",
       "title": "Phase 2: core/git.rs",
       "description": "Implement read_git_state(root) -> GitState { commit, dirty, branch } with std::process::Command: git -C <root> rev-parse HEAD, git status --porcelain (untracked included, ignored excluded), git symbolic-ref --short -q HEAD (None when detached); each call has a 5-second timeout; any failure gives None for that field and never fails the caller. The orchestrator stores it in IndexMeta at build start. Tests with the 1.2 helper: clean repo (commit = rev-parse, dirty false, branch set), edited file (dirty true), untracked file (dirty true), ignored file (dirty false), detached HEAD (branch None), not a repository (all None), git missing via an empty PATH (all None, build succeeds). cargo test passes. Every Git call sets GIT_OPTIONAL_LOCKS=0. read_git_state takes a time budget: 5 s per call at build time, one 1.5 s budget for all calls at query time (3.1). When Git runs but fails (e.g. 'dubious ownership'), log a warning to stderr and return the first line of its stderr as error (status reports it as git_error). Extra tests: an env-capturing fake git on PATH proves GIT_OPTIONAL_LOCKS=0 is set; a fake git that exits 128 with a message gives git_error; a fake git that sleeps past the budget gives None within the budget.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]
@@ -73,7 +73,7 @@
       "id": "2.3",
       "title": "Phase 2: JavaScript Files and New Import Captures",
       "description": "Map js, jsx, mjs and cjs to the TSX grammar, indexing symbols as for TypeScript. Add captures: require('x') and dynamic import('x') with a string literal in JS/TS; Rust use_declaration (full path text) and extern_crate_declaration. Check the 1.2 JS fixtures parse without ERROR nodes in the captured regions; if the TSX grammar fails on common JS there, add tree-sitter-javascript instead and note the choice for the CHANGELOG. Tests: JS symbols found by search; each new import form captured. Existing parser tests unchanged. cargo test passes. Skip built and minified JS: a .js/.jsx/.mjs/.cjs file named *.min.*, larger than 256 KB, or with a line longer than 1,000 characters in its first 32 KB is not indexed (TypeScript unaffected). Tests: each skip rule on the 1.2 fixtures; utils/ost/web/app.js-style hand-written JS is indexed. Rust use capture is one record per statement (a grouped use is one record).",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.1"
       ]
@@ -82,7 +82,7 @@
       "id": "2.4",
       "title": "Phase 2: Import Records With Lines and Package Names",
       "description": "Change FileOutline.imports to Vec<ImportRecord { module, line, text }> (1-based line, trimmed line text truncated to 200 chars) for every language that captures imports. Implement package_name(language, module) per the Specification's rules (Python first dotted segment; JS/TS scoped two segments, unscoped one, none for relative/absolute; Rust first path segment, none for crate/self/super; PHP first namespace segment; Kotlin qualified name minus last segment; Lua up to first '.'; HCL and GDScript none). Unit tests for every rule and every no-package case. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.3"
       ]
@@ -91,7 +91,7 @@
       "id": "2.5",
       "title": "Phase 2: Keep Every Import in the Index",
       "description": "In orchestrator pass 2, record every import as an ImportEntry (path, line, text, module, package, language, resolved) in the imports side table; resolved is true when the existing strategies linked it to an indexed file or symbol, and those still add Imports edges as today. Entries are stored sorted by path then line. Tests: relative import of an indexed fixture file is resolved; @sentry/node is unresolved with package @sentry/node; edge counts for existing non-Rust fixtures unchanged. cargo test passes. Rust resolution: crate::, self::, super:: and own-crate-name (Cargo.toml package name with - as _) paths resolve to Imports edges. The crate root is the nearest ancestor with a Cargo.toml; crate::a::b::Sym links to symbol Sym in src/a/b.rs or src/a/b/mod.rs, or to that file when the last segment is a module; each leaf of a grouped use is linked. Own-crate paths have package None. Tests on the 1.2 Rust fixture crate: each form resolves; an external crate stays unresolved with its package; this repository's Imports edge count before and after recorded in the phase report.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.2",
         "2.4"
@@ -101,7 +101,7 @@
       "id": "2.6",
       "title": "Phase 2 Gate",
       "description": "Phase 2 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase2_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 3.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "2.5"
       ]
