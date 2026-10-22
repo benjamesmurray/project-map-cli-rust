@@ -12,7 +12,7 @@ pub const SCHEMA_VERSION: u32 = 3;
 pub const STALE_INDEX_MESSAGE: &str = "STALE: Index predates documentation indexing (schema < 3). \
 Code tools still work; rebuild with `project-map refresh` or the MCP `init` tool to enable doc tools.";
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum NodeType {
     #[serde(alias = "file")]
     File,
@@ -90,6 +90,21 @@ pub struct EntityMatch {
 }
 
 impl NodeType {
+    /// The snake_case name used in JSON output (the spelling the index also accepts).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NodeType::File => "file",
+            NodeType::Symbol => "symbol",
+            NodeType::KafkaTopic => "kafka_topic",
+            NodeType::DatabaseTable => "database_table",
+            NodeType::ConfigEnvVar => "config_env_var",
+            NodeType::DocSection => "doc_section",
+            NodeType::ApiOperation => "api_operation",
+            NodeType::ApiSchema => "api_schema",
+            NodeType::Unknown => "unknown",
+        }
+    }
+
     /// Documentation and API nodes, counted separately from code symbols.
     pub fn is_doc(&self) -> bool {
         matches!(

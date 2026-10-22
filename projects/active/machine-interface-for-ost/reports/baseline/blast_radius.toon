@@ -1,0 +1,11 @@
+Resource: Blast Radius | Symbol: load in src/core/query_engine.rs
+Summary:
+- Total Impacted Nodes: 1
+- Unique Files Affected: 1
+- Affected Modules/Packages:
+  * src/core: 1 nodes
+
+Top Direct Dependents:
+- src/core/query_engine.rs (ln: 0) -> src.core.query_engine
+
+Next Step: `project-map fetch --path src/core/query_engine.rs --symbol src.core.query_engine` to view source.

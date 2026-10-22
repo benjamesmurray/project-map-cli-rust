@@ -1,0 +1,21 @@
+Resource: DocTerms | Prefix: .
+Terms: 19
+- Claude Code (8) projects/active/machine-interface-for-ost/Specification.md#background, projects/active/machine-interface-for-ost/Specification.md#in-scope, projects/active/machine-interface-for-ost/Specification.md#verification-criteria, projects/completed/2026-10-12_index-integrity-and-concurrent-watcher-safety/Specification.md#symptom, projects/completed/2026-10-12_index-integrity-and-concurrent-watcher-safety/Specification.md#out-of-scope
+- Casting Director (5) projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#doc-and-spec-indexing---specification, projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#user-stories, tests/fixtures/docs/docs/guide.md#, tests/fixtures/docs/docs/guide.md#operator-guide, tests/fixtures/docs/docs/links.md#fenced-code
+- Not built (5) projects/completed/2026-10-22_doc-and-spec-indexing/reports/ost-manager-handoff.md#status-of-p4-project-map-upliftmd-ost-managers-additions
+- Docker Compose (4) projects/completed/topic-indexing-and-snippet-previews/Specification.md#in-scope, projects/completed/topic-indexing-and-snippet-previews/Specification.md#technical-constraints, projects/completed/topic-indexing-and-snippet-previews/Specification.md#overview--architecture
+- ledger (4) tests/fixtures/docs/docs/adr/004-immutable-audit-log.md#context, tests/fixtures/docs/docs/adr/005-retention.md#decision, tests/fixtures/docs/docs/guide.md#operator-guide, tests/fixtures/docs/docs/guide.md#usage
+- Audit Service (3) tests/fixtures/docs/docs/guide.md#operator-guide, tests/fixtures/docs/docs/guide.md#step-2-configure-auditlog-fast-, tests/fixtures/docs/docs/links.md#fenced-code
+- SQL DDL (3) projects/completed/topic-indexing-and-snippet-previews/Specification.md#in-scope, projects/completed/topic-indexing-and-snippet-previews/Specification.md#technical-constraints, projects/completed/topic-indexing-and-snippet-previews/Specification.md#2-srccoreparserrs
+- 7.3 (2) projects/completed/2026-10-22_doc-and-spec-indexing/reports/verification.md#technical-constraints, projects/completed/2026-10-22_doc-and-spec-indexing/reports/verification.md#verification-criteria
+- Compliance Officer (2) tests/fixtures/docs/docs/guide.md#usage, tests/fixtures/docs/docs/guide.md#deep-detail
+- Data Models (2) projects/active/machine-interface-for-ost/Specification.md#in-scope, projects/active/machine-interface-for-ost/Specification.md#user-stories
+- Doc → code links (2) CHANGELOG.md#added, README.md#-documentation-indexing-v030
+- Imports (2) projects/active/machine-interface-for-ost/Specification.md#background, projects/active/machine-interface-for-ost/Specification.md#verification-criteria
+- OST-Manager P5 (2) projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#out-of-scope, projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#verification-criteria
+- OpenAPI YAML (2) projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#technical-stack, projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#verification-criteria
+- Peak RSS (2) projects/completed/2026-10-22_doc-and-spec-indexing/reports/baseline.md#results, projects/completed/2026-10-22_doc-and-spec-indexing/reports/verification.md#71-performance-and-size-verification-5
+- Token-Oriented Object Notation (2) .antigravity.md#3-operational-excellence--map-first-navigation, README.md#-features
+- code-only (2) projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#in-scope, projects/completed/2026-10-22_doc-and-spec-indexing/Specification.md#components-and-interfaces
+- not (2) .antigravity.md#3-operational-excellence--map-first-navigation, README.md#-documentation-indexing-v030
+- pass (2) projects/completed/2026-10-22_doc-and-spec-indexing/reports/verification.md#71-performance-and-size-verification-5

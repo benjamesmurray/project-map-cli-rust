@@ -7,6 +7,7 @@
 
 use crate::core::graph::{DocMeta, DocTerm, EdgeType, NodeType, STALE_INDEX_MESSAGE};
 use crate::core::query_engine::QueryEngine;
+use crate::core::results::end_line_of;
 use crate::core::toon::ToonFormatter;
 use crate::core::utils::normalize_rel_path;
 use petgraph::graph::NodeIndex;
@@ -23,6 +24,11 @@ pub struct DocHit {
     pub path: String,
     pub anchor: String,
     pub heading: String,
+    /// Heading level, 1 for `#`.
+    pub level: usize,
+    /// 1-based line of the heading.
+    pub line: usize,
+    pub score: usize,
     /// Up to two lines of the section's own text.
     pub snippet: Vec<String>,
 }
@@ -37,9 +43,14 @@ pub struct DocSearch {
 /// One heading of a `doc_outline`, indented by its depth in the section tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutlineEntry {
+    /// 0 for a top section.
     pub depth: usize,
     pub heading: String,
     pub anchor: String,
+    /// Heading level, 1 for `#`.
+    pub level: usize,
+    pub line: usize,
+    pub end_line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +66,8 @@ pub struct DocSectionView {
     pub path: String,
     pub anchor: String,
     pub heading: String,
+    pub line: usize,
+    pub end_line: usize,
     pub text: String,
 }
 
@@ -98,6 +111,8 @@ pub struct ApiFileView {
     pub path: String,
     pub operations: Vec<ApiOperationView>,
     pub schemas: Vec<String>,
+    /// 1-based line of each schema, parallel to `schemas`.
+    pub schema_lines: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +121,7 @@ pub struct ApiOperationView {
     pub name: String,
     pub operation_id: Option<String>,
     pub summary: Option<String>,
+    pub line: usize,
 }
 
 /// Terms merged over a directory subtree.
@@ -192,6 +208,20 @@ impl QueryEngine {
             let root = &self.graph.meta.as_ref()?.root;
             std::fs::read_to_string(Path::new(root).join(path)).ok()
         })
+    }
+
+    /// Where to open an indexed path: as given if it exists (relative to the working
+    /// directory, like `fetch_symbol`), else under the index root.
+    pub(crate) fn openable_path(&self, path: &str) -> String {
+        if Path::new(path).exists() {
+            return path.to_string();
+        }
+        match self.graph.meta.as_ref() {
+            Some(m) if Path::new(&m.root).join(path).exists() => {
+                Path::new(&m.root).join(path).to_string_lossy().into_owned()
+            }
+            _ => path.to_string(),
+        }
     }
 
     /// The indexed file node for `path` (any accepted spelling).
@@ -306,6 +336,9 @@ impl QueryEngine {
                         path: path.to_string(),
                         anchor: node.role.clone().unwrap_or_default(),
                         heading: node.name.clone(),
+                        level: heading_level(&node.kind),
+                        line: node.line,
+                        score,
                         snippet: snippet(body, &keywords),
                     },
                 ));
@@ -323,8 +356,9 @@ impl QueryEngine {
         self.require_current()?;
         let file = self.markdown_node(path)?;
         let mut entries = Vec::new();
-        self.walk_sections(file, 0, &mut entries);
         let norm = self.graph.graph[file].path.clone();
+        let source = self.read_source(&norm);
+        self.walk_sections(file, 0, source.as_deref(), &mut entries);
         Ok(DocOutlineView {
             meta: self.graph.doc_meta.get(&norm).cloned(),
             path: norm,
@@ -379,6 +413,8 @@ impl QueryEngine {
             .filter(|s| starts_at_heading(s))
             .ok_or_else(stale)?;
         Ok(DocSectionView {
+            line: node.line,
+            end_line: end_line_of(&text, node.line, node.start_byte, node.end_byte),
             path: norm,
             anchor: anchor.to_string(),
             heading: node.name.clone(),
@@ -612,6 +648,7 @@ impl QueryEngine {
                     path: path.to_string(),
                     operations: Vec::new(),
                     schemas: Vec::new(),
+                    schema_lines: Vec::new(),
                 };
                 for i in nodes {
                     let n = &self.graph.graph[i];
@@ -620,9 +657,11 @@ impl QueryEngine {
                             name: n.name.clone(),
                             operation_id: n.role.clone(),
                             summary: n.docstring.clone(),
+                            line: n.line,
                         });
                     } else {
                         view.schemas.push(n.name.clone());
+                        view.schema_lines.push(n.line);
                     }
                 }
                 view
@@ -631,7 +670,13 @@ impl QueryEngine {
     }
 
     /// Depth-first over `Contains` edges to DocSection children, in document order.
-    fn walk_sections(&self, parent: NodeIndex, depth: usize, out: &mut Vec<OutlineEntry>) {
+    fn walk_sections(
+        &self,
+        parent: NodeIndex,
+        depth: usize,
+        source: Option<&str>,
+        out: &mut Vec<OutlineEntry>,
+    ) {
         let mut kids: Vec<NodeIndex> = self
             .graph
             .graph
@@ -647,10 +692,22 @@ impl QueryEngine {
                 depth,
                 heading: node.name.clone(),
                 anchor: node.role.clone().unwrap_or_default(),
+                level: heading_level(&node.kind),
+                line: node.line,
+                end_line: source.map_or(node.line, |text| {
+                    end_line_of(text, node.line, node.start_byte, node.end_byte)
+                }),
             });
-            self.walk_sections(kid, depth + 1, out);
+            self.walk_sections(kid, depth + 1, source, out);
         }
     }
+}
+
+/// Heading level from a section node's kind (`h1` to `h6`).
+fn heading_level(kind: &str) -> usize {
+    kind.strip_prefix('h')
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(1)
 }
 
 /// True if `s` begins with an ATX heading (`#` after at most three spaces) or a

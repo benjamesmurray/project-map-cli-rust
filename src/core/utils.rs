@@ -1,3 +1,4 @@
+use crate::core::results::TreeNode;
 use std::path::Path;
 
 pub fn path_to_fqn(root: &Path, path: &Path) -> String {
@@ -59,26 +60,53 @@ pub fn resolve_import_path(current_file: &str, import_specifier: &str) -> String
     resolved.to_string_lossy().to_string()
 }
 
-pub fn render_tree(paths: &[String], max_depth: usize) -> String {
-    use std::collections::BTreeMap;
+/// A directory tree of file paths: children by name, sorted.
+#[derive(Default)]
+pub struct PathTree {
+    children: std::collections::BTreeMap<String, PathTree>,
+}
 
-    #[derive(Default)]
-    struct TreeNode {
-        children: BTreeMap<String, TreeNode>,
-    }
-
-    let mut root = TreeNode::default();
-    for path_str in paths {
-        let path = Path::new(path_str);
-        let mut current = &mut root;
-        for component in path.components() {
-            let name = component.as_os_str().to_string_lossy().into_owned();
-            current = current.children.entry(name).or_default();
+impl PathTree {
+    pub fn from_paths(paths: &[String]) -> Self {
+        let mut root = PathTree::default();
+        for path_str in paths {
+            let mut current = &mut root;
+            for component in Path::new(path_str).components() {
+                let name = component.as_os_str().to_string_lossy().into_owned();
+                current = current.children.entry(name).or_default();
+            }
         }
+        root
     }
+
+    /// The tree to `max_depth` levels below the root (the root is depth 0), and
+    /// whether anything deeper was cut.
+    pub fn to_result(&self, name: &str, max_depth: usize) -> (TreeNode, bool) {
+        fn walk(node: &PathTree, name: &str, depth: usize, max: usize, cut: &mut bool) -> TreeNode {
+            let mut children = Vec::new();
+            for (child_name, child) in &node.children {
+                if depth + 1 > max {
+                    *cut = true;
+                    break;
+                }
+                children.push(walk(child, child_name, depth + 1, max, cut));
+            }
+            TreeNode {
+                name: name.to_string(),
+                children,
+            }
+        }
+        let mut cut = false;
+        let tree = walk(self, name, 0, max_depth, &mut cut);
+        (tree, cut)
+    }
+}
+
+pub fn render_tree(paths: &[String], max_depth: usize) -> String {
+    let root = PathTree::from_paths(paths);
 
     fn render_node(
-        node: &TreeNode,
+        node: &PathTree,
         name: &str,
         prefix: &str,
         is_last: bool,

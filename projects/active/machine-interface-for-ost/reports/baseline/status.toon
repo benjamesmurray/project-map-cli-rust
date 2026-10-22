@@ -1,0 +1,79 @@
+Project Map CLI - Status
+Phase: Ready
+Index: Found (/tmp/claude-1000/-home-benmurray-Projects-project-map-cli-rust/e383aaa1-4e6c-4dae-a379-e40bd45eecf7/scratchpad/idx-self/latest/.project-map.json)
+Tool Version: 0.3.0
+Root: /home/benmurray/Projects/project-map-cli-rust
+Built At: 2026-10-22T10:21:51.824774963+00:00
+Files: 98
+Symbols: 694
+Edges: 1231
+Doc Files: 21
+Doc Sections: 162
+Doc References: 353
+Unresolved Mentions: 1219
+Ambiguous Mentions: 7
+API Operations: 8
+
+--- Project Pulse ---
+├── .antigravity.md
+├── .cli-map.json
+├── .cli-project-map.json
+├── CHANGELOG.md
+├── Cargo.toml
+├── README.md
+├── projects
+│   ├── active
+│   │   └── machine-interface-for-ost
+│   └── completed
+│       ├── 2026-09-05_filter-active-features-spec-artifacts
+│       ├── 2026-10-12_index-integrity-and-concurrent-watcher-safety
+│       ├── 2026-10-22_doc-and-spec-indexing
+│       └── topic-indexing-and-snippet-previews
+├── src
+│   ├── cli
+│   │   ├── commands.rs
+│   │   └── mod.rs
+│   ├── core
+│   │   ├── doc_queries.rs
+│   │   ├── docs.rs
+│   │   ├── graph.rs
+│   │   ├── lock.rs
+│   │   ├── mod.rs
+│   │   ├── orchestrator.rs
+│   │   ├── parser.rs
+│   │   ├── query_engine.rs
+│   │   ├── toon.rs
+│   │   ├── utils.rs
+│   │   └── watcher.rs
+│   ├── error.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   └── mcp
+│       ├── mod.rs
+│       └── server.rs
+└── tests
+    ├── docs_index_test.rs
+    ├── docs_query_test.rs
+    ├── fixtures
+    │   ├── compatibility
+    │   ├── docs
+    │   ├── gdscript
+    │   ├── kotlin
+    │   ├── lua
+    │   ├── mcp_tool_schemas.json
+    │   ├── php_symfony
+    │   ├── python
+    │   ├── rust
+    │   ├── sql
+    │   ├── streaming
+    │   ├── terraform
+    │   ├── typescript
+    │   └── vue
+    ├── integration_test.rs
+    ├── mcp_test.rs
+    ├── regression_test.rs
+    └── watcher_test.rs
+
+--- Active Features ---
+- projects/active/machine-interface-for-ost
+

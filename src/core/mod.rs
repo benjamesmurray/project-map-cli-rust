@@ -5,6 +5,8 @@ pub mod lock;
 pub mod orchestrator;
 pub mod parser;
 pub mod query_engine;
+pub mod results;
 pub mod toon;
+pub mod typed_queries;
 pub mod utils;
 pub mod watcher;

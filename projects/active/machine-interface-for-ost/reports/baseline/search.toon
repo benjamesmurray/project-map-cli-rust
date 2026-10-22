@@ -1,0 +1,34 @@
+Resource: Symbols | Query: graph
+Matches Found: 10
+
+Match: Collector [Symbol]
+File: src/core/docs.rs:294
+
+Match: flush_prose [Symbol]
+File: src/core/docs.rs:345
+
+Match: ParsedDoc [Symbol]
+File: src/core/orchestrator.rs:47
+
+Match: SerializableGraph [Symbol]
+File: src/core/graph.rs:156
+
+Match: ProjectGraph [Symbol]
+File: src/core/graph.rs:175
+
+Match: ProjectGraph [Symbol]
+File: src/core/graph.rs:184
+
+Match: ProjectGraph [Symbol]
+File: src/core/graph.rs:190
+
+Match: V0118SerializableGraph [Symbol]
+File: src/core/graph.rs:480
+
+Match: sample_v3_graph [Symbol]
+File: src/core/graph.rs:571
+
+Match: V020SerializableGraph [Symbol]
+File: src/core/graph.rs:681
+
+Next Step: `project-map impact --fqn Collector`

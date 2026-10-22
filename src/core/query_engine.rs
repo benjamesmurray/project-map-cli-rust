@@ -1,8 +1,10 @@
 use crate::core::graph::{
     EntityMatch, IndexMeta, NodeData, NodeType, ProjectGraph, SnippetPreview,
 };
+use crate::core::results::BlastMatch;
 use crate::core::utils::normalize_rel_path;
 use crate::error::Result;
+use petgraph::graph::NodeIndex;
 use petgraph::visit::Dfs;
 use std::collections::HashMap;
 use std::path::Path;
@@ -132,13 +134,7 @@ impl QueryEngine {
                 .collect();
         }
 
-        let file_node = self.graph.graph.node_indices().find(|i| {
-            let n = &self.graph.graph[*i];
-            n.node_type == NodeType::File
-                && (n.path == norm_path || normalize_rel_path(Path::new("."), &n.path) == norm_path)
-        });
-
-        if let Some(idx) = file_node {
+        if let Some(idx) = self.outline_file_node(&norm_path) {
             use petgraph::visit::EdgeRef;
             self.graph
                 .graph
@@ -158,12 +154,25 @@ impl QueryEngine {
         }
     }
 
-    pub fn analyze_impact(&self, name: &str) -> Vec<NodeData> {
-        let node_idx = self.graph.graph.node_indices().find(|i| {
-            self.graph.graph[*i].name == name && !self.graph.graph[*i].node_type.is_doc()
-        });
+    /// The file node an outline is taken from; `norm_path` is already normalised.
+    pub(crate) fn outline_file_node(&self, norm_path: &str) -> Option<NodeIndex> {
+        self.graph.graph.node_indices().find(|i| {
+            let n = &self.graph.graph[*i];
+            n.node_type == NodeType::File
+                && (n.path == norm_path || normalize_rel_path(Path::new("."), &n.path) == norm_path)
+        })
+    }
 
-        if let Some(start_node) = node_idx {
+    /// The node `plan` starts from: the first non-doc node with this name.
+    pub(crate) fn plan_target(&self, name: &str) -> Option<NodeIndex> {
+        self.graph
+            .graph
+            .node_indices()
+            .find(|i| self.graph.graph[*i].name == name && !self.graph.graph[*i].node_type.is_doc())
+    }
+
+    pub fn analyze_impact(&self, name: &str) -> Vec<NodeData> {
+        if let Some(start_node) = self.plan_target(name) {
             // Impact: who do I depend on? (Outgoing edges)
             let mut dfs = Dfs::new(&self.graph.graph, start_node);
             let mut results = Vec::new();
@@ -178,31 +187,41 @@ impl QueryEngine {
         }
     }
 
-    pub fn check_blast_radius(&self, path: &str, symbol: &str) -> Vec<NodeData> {
-        let norm_path = normalize_rel_path(Path::new("."), path);
-        let node_idx = self.graph.graph.node_indices().find(|i| {
+    /// The node a blast radius starts from: the symbol in the file, else (when the
+    /// symbol is not there) the file itself. `norm_path` is already normalised.
+    pub(crate) fn blast_target(
+        &self,
+        norm_path: &str,
+        symbol: &str,
+    ) -> Option<(NodeIndex, BlastMatch)> {
+        let in_file = |node: &NodeData| {
+            node.path == norm_path || normalize_rel_path(Path::new("."), &node.path) == norm_path
+        };
+        let symbol_idx = self.graph.graph.node_indices().find(|i| {
             let node = &self.graph.graph[*i];
-            (node.path == norm_path || normalize_rel_path(Path::new("."), &node.path) == norm_path)
+            in_file(node)
                 && node.name == symbol
                 && node.node_type != NodeType::File
                 && !node.node_type.is_doc()
         });
-
-        let start_node = if let Some(idx) = node_idx {
-            idx
-        } else {
-            // Try matching just by file path if symbol not found
-            let file_node = self.graph.graph.node_indices().find(|i| {
+        if let Some(idx) = symbol_idx {
+            return Some((idx, BlastMatch::Symbol));
+        }
+        // Try matching just by file path if symbol not found
+        self.graph
+            .graph
+            .node_indices()
+            .find(|i| {
                 let node = &self.graph.graph[*i];
-                (node.path == norm_path
-                    || normalize_rel_path(Path::new("."), &node.path) == norm_path)
-                    && node.node_type == NodeType::File
-            });
-            if let Some(idx) = file_node {
-                idx
-            } else {
-                return Vec::new();
-            }
+                in_file(node) && node.node_type == NodeType::File
+            })
+            .map(|idx| (idx, BlastMatch::File))
+    }
+
+    pub fn check_blast_radius(&self, path: &str, symbol: &str) -> Vec<NodeData> {
+        let norm_path = normalize_rel_path(Path::new("."), path);
+        let Some((start_node, _)) = self.blast_target(&norm_path, symbol) else {
+            return Vec::new();
         };
 
         // Blast Radius: who depends on me? (Incoming edges)

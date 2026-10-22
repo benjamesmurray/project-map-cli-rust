@@ -18,6 +18,7 @@ use tracing_subscriber::fmt;
 
 use crate::core::orchestrator::rebuild_and_publish;
 use crate::core::query_engine::QueryEngine;
+use crate::core::results::QueryError;
 use crate::core::toon::{ToonFormatter, DEFAULT_MAX_CHARS};
 use crate::core::utils::{get_active_features, normalize_rel_path, render_tree};
 use crate::error::Result;
@@ -304,7 +305,7 @@ impl McpServerHandler {
     fn with_engine(&self, f: impl FnOnce(&QueryEngine) -> String) -> String {
         match *self.engine.read().unwrap() {
             Some(ref engine) => f(engine),
-            None => "Error: Index not loaded".to_string(),
+            None => QueryError::index_missing().message,
         }
     }
 }
@@ -491,10 +492,11 @@ impl ServerHandler for McpServerHandler {
                         let matches = engine.find_files(&f);
                         ToonFormatter::format_file_matches(&f, &matches)
                     } else {
-                        "Error: Provide query, path, or filename".to_string()
+                        QueryError::invalid_argument("Error: Provide query, path, or filename")
+                            .message
                     }
                 } else {
-                    "Error: Index not loaded".to_string()
+                    QueryError::index_missing().message
                 }
             }
             "blast_radius" => {
@@ -506,7 +508,7 @@ impl ServerHandler for McpServerHandler {
                     let results = engine.check_blast_radius(&norm_path, &args.symbol);
                     ToonFormatter::format_blast_radius(&norm_path, &args.symbol, &results)
                 } else {
-                    "Error: Index not loaded".to_string()
+                    QueryError::index_missing().message
                 }
             }
             "plan" => {
@@ -517,7 +519,7 @@ impl ServerHandler for McpServerHandler {
                     let impact = engine.analyze_impact(&args.symbol);
                     ToonFormatter::format_impact_analysis(&args.symbol, &impact)
                 } else {
-                    "Error: Index not loaded".to_string()
+                    QueryError::index_missing().message
                 }
             }
             "search" => {
@@ -529,7 +531,7 @@ impl ServerHandler for McpServerHandler {
                     let matches = engine.find_entities_with_preview(&args.query, preview_lines);
                     ToonFormatter::format_entity_matches(&args.query, &matches)
                 } else {
-                    "Error: Index not loaded".to_string()
+                    QueryError::index_missing().message
                 }
             }
             "fetch_symbol" => {
@@ -574,7 +576,7 @@ impl ServerHandler for McpServerHandler {
                         ToonFormatter::format_fetch_result(&norm_path, &args.symbol, None)
                     }
                 } else {
-                    "Error: Index not loaded".to_string()
+                    QueryError::index_missing().message
                 }
             }
             "doc_search" => {

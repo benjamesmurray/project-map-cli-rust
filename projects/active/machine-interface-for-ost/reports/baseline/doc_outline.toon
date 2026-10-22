@@ -1,0 +1,18 @@
+Resource: DocOutline | Path: README.md
+Project Map CLI (Rust) #project-map-cli-rust
+  🚀 Features #-features
+  🛠 Installation #-installation
+  📖 Usage #-usage
+    1. Build the Map #1-build-the-map
+    2. Find a Symbol #2-find-a-symbol
+    3. Analyze Blast Radius #3-analyze-blast-radius
+    4. Fetch Raw Logic #4-fetch-raw-logic
+    5. Start MCP Server & Background Watching #5-start-mcp-server--background-watching
+    6. Workspace Status & Diagnostics #6-workspace-status--diagnostics
+    7. Query Documentation (v0.3.0+) #7-query-documentation-v030
+  📚 Documentation Indexing (v0.3.0+) #-documentation-indexing-v030
+  🔒 Concurrency & Watcher Safety (v0.2.0+) #-concurrency--watcher-safety-v020
+  🔄 Upgrading to 0.3.0 #-upgrading-to-030
+  🔄 Upgrading from 0.1.x #-upgrading-from-01x
+  📂 Storage Structure #-storage-structure
+  License #license
