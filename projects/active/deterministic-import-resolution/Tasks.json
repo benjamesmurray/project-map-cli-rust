@@ -68,7 +68,7 @@
       "id": "2.3",
       "title": "Phase 2: HashMap/HashSet Audit",
       "description": "Audit every HashMap and HashSet in src/ (about 45 uses). For each, record in a table: file:line, what it holds, whether its iteration order can reach graph construction, a side table or tool output, and the fix (BTreeMap/BTreeSet, sort before iterating, or lookup-only with a one-line code comment saying why order is irrelevant). Apply the fixes. Put the table in the phase report. cargo test passes.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "2.1",
         "2.2"
@@ -78,7 +78,7 @@
       "id": "2.4",
       "title": "Phase 2: Repeated-Build Determinism Tests",
       "description": "Add tests/import_resolution_test.rs (or extend determinism_test.rs): build the ambiguous_imports fixture 20 times in one process and assert identical sorted edge lists ((from path, from symbol, to path, to symbol, type) tuples) and identical import side tables; add ambiguous_imports to the existing two-directory determinism_test calls in both formats. Confirm the new tests fail on 0.4.0's resolver (temporarily, or by reasoning recorded in the report) so they would have caught the defect. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.3"
       ]
@@ -87,7 +87,7 @@
       "id": "2.5",
       "title": "Phase 2 Gate",
       "description": "Phase 2 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/deterministic-import-resolution/reports/phase2_report.md (what was built, test counts, deviations from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 3.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "2.4"
       ]

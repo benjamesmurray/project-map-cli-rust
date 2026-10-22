@@ -584,6 +584,7 @@ impl QueryEngine {
         let everything = prefix.is_empty() || prefix == ".";
         /// (summed count, (path, anchor) sections seen)
         type Merged<'a> = (u32, Vec<&'a (String, String)>);
+        // Drained into `terms`, which is sorted by (count, term); terms are unique.
         let mut merged: HashMap<&str, Merged> = HashMap::new();
         for (dir, terms) in &self.graph.doc_terms {
             let inside = everything

@@ -208,6 +208,7 @@ impl QueryEngine {
         let Some(start) = self.plan_target(name) else {
             return Vec::new();
         };
+        // Drained into a vector sorted by a total order (the node index is the last key).
         let mut dist: HashMap<NodeIndex, usize> = HashMap::from([(start, 0)]);
         let mut queue = VecDeque::from([start]);
         while let Some(current) = queue.pop_front() {
@@ -291,6 +292,7 @@ impl QueryEngine {
         // A 0-1 breadth-first walk over incoming edges. Following containment upward (to
         // the enclosing symbol and the file) costs 0, so the target's structural
         // ancestors stay at distance 0 and are not dependents. Every other edge costs 1.
+        // Drained into a vector sorted by a total order (the node index is the last key).
         let mut dist: HashMap<NodeIndex, usize> = HashMap::new();
         dist.insert(start, 0);
         let mut queue = VecDeque::from([(start, 0usize)]);
@@ -543,6 +545,7 @@ fn symbol_order_path_first(a: &NodeData, b: &NodeData, import: bool) -> std::cmp
 }
 
 pub struct SnippetExtractor {
+    /// Lookup-only cache of file lines.
     file_cache: HashMap<String, Vec<String>>,
 }
 

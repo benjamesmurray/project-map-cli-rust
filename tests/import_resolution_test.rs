@@ -188,3 +188,34 @@ fn two_directories_give_a_byte_identical_index() {
         );
     }
 }
+
+#[test]
+fn blast_summary_lists_equal_sized_directories_in_name_order() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("target.py"), "def run():\n    pass\n").unwrap();
+    for dir in ["h", "c", "a", "g", "e", "b", "f", "d"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+        std::fs::write(root.join(dir).join("user.py"), "import target\n").unwrap();
+    }
+    let cli = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_project-map-cli-rust"))
+            .args(args)
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+    cli(&["build", "-r", ".", "-o", ".project-map"]);
+    for _ in 0..10 {
+        let text = cli(&["blast", "-p", "target.py", "-s", "target"]);
+        let dirs: Vec<&str> = text
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("* "))
+            .filter_map(|l| l.split(':').next())
+            .collect();
+        assert_eq!(&dirs[..5], ["a", "b", "c", "d", "e"], "{text}");
+    }
+}

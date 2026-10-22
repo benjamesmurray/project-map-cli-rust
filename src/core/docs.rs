@@ -286,6 +286,7 @@ fn is_inline_end(tag: &TagEnd) -> bool {
 #[derive(Default)]
 struct Collector {
     mentions: Vec<Mention>,
+    /// Membership test only: mentions are kept in `mentions`, in document order.
     seen: HashSet<(Option<usize>, MentionKind, MentionForm)>,
     terms: Vec<TermCandidate>,
     prose: Prose,
@@ -654,6 +655,7 @@ pub fn github_slug(text: &str) -> String {
 /// `foo`, later ones become `foo-1`, `foo-2`, skipping any suffix already taken.
 #[derive(Default)]
 struct Slugger {
+    /// Lookup-only.
     occurrences: HashMap<String, usize>,
 }
 
@@ -1007,7 +1009,7 @@ pub fn aggregate_terms<'a>(
 ) -> BTreeMap<String, Vec<DocTerm>> {
     /// (count, [(path, byte, anchor)])
     type Seen<'a> = (u32, Vec<(&'a str, usize, &'a str)>);
-    let mut dirs: BTreeMap<&str, HashMap<&str, Seen>> = BTreeMap::new();
+    let mut dirs: BTreeMap<&str, BTreeMap<&str, Seen>> = BTreeMap::new();
     for (path, outline) in docs {
         let dir = path.rsplit_once('/').map_or(".", |(d, _)| d);
         let terms = dirs.entry(dir).or_default();
@@ -1099,6 +1101,7 @@ pub struct SymbolRef {
 /// and the prefix is put back for the lookup.
 #[derive(Debug, Default)]
 pub struct ResolveTables {
+    // The maps below are lookup-only; the candidate lists inside them keep insertion order.
     prefix: String,
     files: HashMap<String, NodeIndex>,
     file_symbols: HashMap<String, Vec<SymbolRef>>,

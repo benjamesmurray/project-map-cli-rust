@@ -16,6 +16,7 @@ use std::path::Path;
 /// Reads each file once to turn byte ranges into last lines.
 struct EndLines<'a> {
     engine: &'a QueryEngine,
+    /// Lookup-only cache of file text.
     sources: HashMap<String, Option<String>>,
 }
 

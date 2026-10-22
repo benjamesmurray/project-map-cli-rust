@@ -103,8 +103,10 @@ impl Orchestrator {
 
         let mut outlines = Vec::new();
         let mut fqn_to_node = BTreeMap::new();
+        // Lookup-only: never iterated, so its order cannot reach the graph.
         let mut path_to_node = HashMap::new();
         let mut doc_inputs = Vec::new();
+        // Lookup-only (`get`), as is `path_to_node` above.
         let mut fs_paths: HashMap<String, PathBuf> = HashMap::new();
 
         // Pass 1: Parse all files and create nodes
@@ -248,6 +250,7 @@ impl Orchestrator {
 
         // Pass 2: Resolve imports and create edges; every import is also kept in the side table
         let mut import_entries: Vec<ImportEntry> = Vec::new();
+        // Lookup-only memo of `crate_of`.
         let mut crate_cache: HashMap<String, CrateInfo> = HashMap::new();
         let symbols_by_file = symbol_lookup(&self.graph.graph);
         let fqn_set: BTreeSet<String> = fqn_to_node.keys().cloned().collect();
@@ -471,6 +474,7 @@ impl Orchestrator {
         }
 
         // `path:line` mentions need the target's line starts; read each file once.
+        // Membership test only (`insert`): never iterated.
         let mut loaded = HashSet::new();
         for doc in parsed {
             for mention in &doc.outline.mentions {
@@ -488,6 +492,7 @@ impl Orchestrator {
             }
         }
 
+        // Membership test only (`insert`): edges are added in document and mention order.
         let mut edges = HashSet::new();
         for doc in parsed {
             for mention in &doc.outline.mentions {
@@ -837,6 +842,7 @@ fn exchange_paths(a: &Path, b: &Path) -> std::io::Result<()> {
 }
 
 /// (file path, symbol name) to the first symbol node of that name in the file.
+/// Lookup-only: the first node is chosen in node order, and the map is never iterated.
 fn symbol_lookup(
     graph: &petgraph::graph::DiGraph<NodeData, EdgeType>,
 ) -> HashMap<(String, String), NodeIndex> {

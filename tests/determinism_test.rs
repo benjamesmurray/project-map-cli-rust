@@ -13,6 +13,7 @@ use std::process::Command;
 use tempfile::{tempdir, TempDir};
 
 const DOCS: &str = "tests/fixtures/docs";
+const AMBIGUOUS: &str = "tests/fixtures/ambiguous_imports";
 
 const BIN: &str = env!("CARGO_BIN_EXE_project-map-cli-rust");
 
@@ -72,6 +73,29 @@ fn calls(fixture: &str) -> Vec<Vec<&'static str>> {
             vec!["modules", "--max-depth", "3"],
             vec!["modules", "src", "--max-depth", "1"],
             vec!["imports", "serde"],
+        ]);
+    } else if fixture == AMBIGUOUS {
+        all.extend([
+            vec!["find", "-q", "make"],
+            vec!["search", "tied"],
+            vec!["context", "-p", "src/app/service.py"],
+            vec!["blast", "-p", "src/app/config.py", "-s", "SETTING"],
+            vec![
+                "blast",
+                "-p",
+                "tests/fixtures_copy/app/config.py",
+                "-s",
+                "COPY_SETTING",
+            ],
+            vec!["blast", "-p", "lib_a/shared/util.py", "-s", "VALUE"],
+            vec!["blast", "-p", "lib_b/shared/util.py", "-s", "VALUE"],
+            vec!["blast", "-p", "pkg/mod.py", "-s", "Thing"],
+            vec!["blast", "-p", "src/myredis.py", "-s", "CLIENT"],
+            vec!["impact", "-f", "make3"],
+            vec!["modules", "--max-depth", "3"],
+            vec!["imports", "redis"],
+            vec!["imports", "shared"],
+            vec!["imports", "pkg"],
         ]);
     } else {
         all.extend([
@@ -188,6 +212,11 @@ fn docs_fixture_output_is_identical_across_directories_and_rebuilds() {
 #[test]
 fn imports_fixture_output_is_identical_across_directories_and_rebuilds() {
     assert_tool_output_is_stable(IMPORTS_FIXTURE);
+}
+
+#[test]
+fn ambiguous_imports_fixture_output_is_identical_across_directories_and_rebuilds() {
+    assert_tool_output_is_stable(AMBIGUOUS);
 }
 
 // --- Typed results, which are what the JSON renderer serialises ---

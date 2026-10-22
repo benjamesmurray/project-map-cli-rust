@@ -7,7 +7,7 @@ use crate::core::graph::{
 use crate::core::query_engine::QueryEngine;
 use crate::core::results::{BlastRadiusResult, ImportsResult, ModulesResult};
 use crate::core::typed_queries::GitView;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Default size cap, in characters, for the documentation tools.
@@ -225,7 +225,7 @@ impl ToonFormatter {
         if results.is_empty() {
             output.push_str("No dependent components found.\n");
         } else {
-            let mut dir_counts: HashMap<String, usize> = HashMap::new();
+            let mut dir_counts: BTreeMap<String, usize> = BTreeMap::new();
 
             for r in results {
                 let dir = std::path::Path::new(&r.path)
@@ -249,7 +249,8 @@ impl ToonFormatter {
             output.push_str("- Affected Modules/Packages:\n");
 
             let mut sorted_dirs: Vec<_> = dir_counts.into_iter().collect();
-            sorted_dirs.sort_by_key(|b| std::cmp::Reverse(b.1));
+            // Count descending, then directory: equal counts must not follow the map's order.
+            sorted_dirs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
             for (dir, count) in sorted_dirs.iter().take(5) {
                 output.push_str(&format!("  * {}: {} nodes\n", dir, count));

@@ -44,6 +44,7 @@ pub struct FileOutline {
 pub struct CodeParser {
     parser: Parser,
     /// Compiled queries by file extension; compiling one per file dominated indexing time.
+    /// Lookup-only cache of compiled queries, keyed by extension.
     queries: HashMap<String, Query>,
 }
 

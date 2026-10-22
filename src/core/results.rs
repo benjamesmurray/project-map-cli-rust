@@ -146,6 +146,7 @@ fn serialize_node_type<S: Serializer>(t: &NodeType, s: S) -> Result<S::Ok, S::Er
 #[derive(Debug, Default)]
 pub struct QualifiedNamer {
     /// Per path: (start_byte, end_byte, name) of every code symbol.
+    /// Lookup-only after construction; each list is sorted.
     by_path: HashMap<String, Vec<(usize, usize, String)>>,
 }
 
