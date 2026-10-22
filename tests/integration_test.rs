@@ -568,3 +568,26 @@ fn test_atomicity_reader_loop_during_rebuild_and_publish() {
     let total_reads = reader_thread.join().expect("Reader thread panicked");
     assert!(total_reads > 0, "Reader thread should have performed reads");
 }
+
+#[test]
+fn test_cli_help_lists_the_doc_subcommands() {
+    let exe = env!("CARGO_BIN_EXE_project-map-cli-rust");
+    let help = |args: &[&str]| {
+        let out = std::process::Command::new(exe).args(args).output().unwrap();
+        assert!(out.status.success(), "{args:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+
+    let top = help(&["--help"]);
+    assert!(top.contains("doc"), "{top}");
+    assert!(top.contains("api"), "{top}");
+
+    let doc = help(&["doc", "--help"]);
+    for sub in ["search", "outline", "section", "links", "terms"] {
+        assert!(doc.contains(sub), "doc --help lacks {sub}: {doc}");
+    }
+    assert!(help(&["doc", "section", "--help"]).contains("--max-chars"));
+    assert!(help(&["doc", "search", "--help"]).contains("--limit"));
+    assert!(help(&["doc", "links", "--help"]).contains("--symbol"));
+    assert!(help(&["doc", "terms", "--help"]).contains("--limit"));
+}

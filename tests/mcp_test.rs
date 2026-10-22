@@ -105,7 +105,13 @@ async fn test_mcp_tool_list_names() {
             "plan",
             "search",
             "fetch_symbol",
-            "init"
+            "init",
+            "doc_search",
+            "doc_outline",
+            "doc_section",
+            "doc_links",
+            "doc_terms",
+            "api_surface"
         ]
     );
 }
@@ -226,4 +232,374 @@ async fn test_mcp_tool_execution_renamed() {
         .await
         .unwrap();
     assert!(!res.content.is_empty());
+}
+
+// --- Doc tools (Verification 4) ---
+
+fn docs_handler(index: &Path) -> McpServerHandler {
+    let engine = QueryEngine::load(index).expect("Failed to load index");
+    McpServerHandler::new(Arc::new(std::sync::RwLock::new(Some(engine))))
+}
+
+/// A docs-fixture index built with an absolute root (paths are root-relative).
+fn docs_index(test_name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("test-mcp-docs-{}", test_name));
+    let _ = std::fs::remove_dir_all(&dir);
+    let root = dir.join("project");
+    copy_dir(Path::new("tests/fixtures/docs"), &root);
+    let root = root.canonicalize().unwrap();
+    let mut orch = Orchestrator::new();
+    orch.build_index(&root, &dir.join("out")).unwrap();
+    let index = dir.join("index.json");
+    orch.save_index(&index).unwrap();
+    (dir, index)
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+async fn call(handler: &McpServerHandler, name: &str, args: serde_json::Value) -> String {
+    let params = CallToolRequestParams {
+        name: name.to_string(),
+        arguments: args.as_object().cloned(),
+        meta: None,
+        task: None,
+    };
+    let res = handler
+        .handle_call_tool_request(params, Arc::new(DummyRuntime))
+        .await
+        .unwrap();
+    serde_json::to_value(&res.content[0]).unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[tokio::test]
+async fn test_mcp_doc_tools_return_the_formatter_output() {
+    use project_map_cli_rust::core::toon::{ToonFormatter, DEFAULT_MAX_CHARS};
+    let (dir, index) = docs_index("outputs");
+    let handler = docs_handler(&index);
+    let engine = QueryEngine::load(&index).unwrap();
+
+    let got = call(
+        &handler,
+        "doc_search",
+        serde_json::json!({"query": "audit log"}),
+    )
+    .await;
+    let want = ToonFormatter::format_doc_search(
+        "audit log",
+        &engine.search_docs("audit log", 10).unwrap(),
+        DEFAULT_MAX_CHARS,
+    );
+    assert_eq!(got, want);
+    assert!(got.contains("audit"), "{got}");
+
+    let got = call(
+        &handler,
+        "doc_search",
+        serde_json::json!({"query": "audit log", "limit": 1}),
+    )
+    .await;
+    let want = ToonFormatter::format_doc_search(
+        "audit log",
+        &engine.search_docs("audit log", 1).unwrap(),
+        DEFAULT_MAX_CHARS,
+    );
+    assert_eq!(got, want);
+
+    let got = call(
+        &handler,
+        "doc_outline",
+        serde_json::json!({"path": "docs/guide.md"}),
+    )
+    .await;
+    let want = ToonFormatter::format_doc_outline(
+        &engine.doc_outline("docs/guide.md").unwrap(),
+        DEFAULT_MAX_CHARS,
+    );
+    assert_eq!(got, want);
+
+    let got = call(
+        &handler,
+        "doc_section",
+        serde_json::json!({"path": "docs/guide.md", "anchor": "usage"}),
+    )
+    .await;
+    let want = ToonFormatter::format_doc_section(
+        &engine.doc_section("docs/guide.md", "usage").unwrap(),
+        DEFAULT_MAX_CHARS,
+    );
+    assert_eq!(got, want);
+
+    let got = call(
+        &handler,
+        "doc_links",
+        serde_json::json!({"path": "src/audit/log.rs", "symbol": "AuditLog"}),
+    )
+    .await;
+    let want = ToonFormatter::format_doc_links(
+        &engine
+            .doc_links("src/audit/log.rs", Some("AuditLog"))
+            .unwrap(),
+        DEFAULT_MAX_CHARS,
+    );
+    assert_eq!(got, want);
+
+    let got = call(&handler, "doc_terms", serde_json::json!({})).await;
+    let want =
+        ToonFormatter::format_doc_terms(&engine.doc_terms(None, 30).unwrap(), DEFAULT_MAX_CHARS);
+    assert_eq!(got, want);
+
+    let got = call(&handler, "doc_terms", serde_json::json!({"limit": 2})).await;
+    let want =
+        ToonFormatter::format_doc_terms(&engine.doc_terms(None, 2).unwrap(), DEFAULT_MAX_CHARS);
+    assert_eq!(got, want);
+
+    let got = call(&handler, "api_surface", serde_json::json!({})).await;
+    let want =
+        ToonFormatter::format_api_surface(&engine.api_surface(None).unwrap(), DEFAULT_MAX_CHARS);
+    assert_eq!(got, want);
+    assert!(!got.is_empty());
+
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[tokio::test]
+async fn test_mcp_doc_section_truncates_with_a_small_budget() {
+    let (dir, index) = docs_index("truncate");
+    let handler = docs_handler(&index);
+    let args = serde_json::json!({"path": "docs/guide.md", "anchor": "usage", "max_chars": 40});
+    let small = call(&handler, "doc_section", args).await;
+    let full = call(
+        &handler,
+        "doc_section",
+        serde_json::json!({"path": "docs/guide.md", "anchor": "usage"}),
+    )
+    .await;
+    assert!(small.to_lowercase().contains("truncated"), "{small}");
+    assert!(!full.to_lowercase().contains("truncated"), "{full}");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[tokio::test]
+async fn test_mcp_doc_tools_report_errors_as_text() {
+    let (dir, index) = docs_index("errors");
+    let handler = docs_handler(&index);
+    let out = call(
+        &handler,
+        "doc_outline",
+        serde_json::json!({"path": "nope.md"}),
+    )
+    .await;
+    assert!(!out.is_empty());
+    let out = call(
+        &handler,
+        "doc_section",
+        serde_json::json!({"path": "docs/guide.md", "anchor": "no-such-anchor"}),
+    )
+    .await;
+    assert!(
+        out.contains("no-such-anchor") || out.to_lowercase().contains("anchor"),
+        "{out}"
+    );
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[tokio::test]
+async fn test_mcp_doc_tools_return_the_stale_message_on_a_v2_index() {
+    use project_map_cli_rust::core::graph::STALE_INDEX_MESSAGE;
+    let handler = docs_handler(Path::new("tests/fixtures/compatibility/v0_2_0_index.json"));
+    for (tool, args) in [
+        ("doc_search", serde_json::json!({"query": "audit"})),
+        ("doc_outline", serde_json::json!({"path": "README.md"})),
+        (
+            "doc_section",
+            serde_json::json!({"path": "README.md", "anchor": "intro"}),
+        ),
+        ("doc_links", serde_json::json!({"path": "src/main.rs"})),
+        ("doc_terms", serde_json::json!({})),
+        ("api_surface", serde_json::json!({})),
+    ] {
+        assert_eq!(
+            call(&handler, tool, args).await,
+            STALE_INDEX_MESSAGE,
+            "{tool}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_mcp_doc_tools_without_an_index() {
+    let handler = McpServerHandler::new(Arc::new(std::sync::RwLock::new(None)));
+    let out = call(&handler, "doc_search", serde_json::json!({"query": "x"})).await;
+    assert_eq!(out, "Error: Index not loaded");
+}
+
+/// Use-case phrase each tool description must contain (Verification 6).
+const USE_CASE_PHRASES: [(&str, &str); 13] = [
+    ("status", "before grepping"),
+    ("query", "outline"),
+    ("blast_radius", "grep cannot follow imports"),
+    ("plan", "before a refactor"),
+    ("search", "code-only"),
+    ("fetch_symbol", "without reading the whole file"),
+    ("init", "after significant code changes"),
+    ("doc_search", "instead of grepping"),
+    ("doc_outline", "heading tree"),
+    ("doc_section", "one section"),
+    ("doc_links", "documentation that mentions"),
+    ("doc_terms", "domain vocabulary"),
+    ("api_surface", "OpenAPI"),
+];
+
+#[tokio::test]
+async fn test_mcp_every_tool_description_names_its_use_case() {
+    let handler = create_test_handler("descriptions");
+    let result = handler
+        .handle_list_tools_request(None, Arc::new(DummyRuntime))
+        .await
+        .unwrap();
+    assert_eq!(result.tools.len(), 13);
+    for (name, phrase) in USE_CASE_PHRASES {
+        let tool = result.tools.iter().find(|t| t.name == name).unwrap();
+        let description = tool.description.as_deref().unwrap_or_default();
+        assert!(!description.is_empty(), "{name}: empty description");
+        assert!(
+            description.contains(phrase),
+            "{name}: description {description:?} lacks {phrase:?}"
+        );
+    }
+    let search = result.tools.iter().find(|t| t.name == "search").unwrap();
+    assert!(search
+        .description
+        .as_deref()
+        .unwrap()
+        .contains("doc_search"));
+}
+
+#[tokio::test]
+async fn test_mcp_existing_tool_schemas_are_unchanged() {
+    let handler = create_test_handler("schemas");
+    let result = handler
+        .handle_list_tools_request(None, Arc::new(DummyRuntime))
+        .await
+        .unwrap();
+    let snapshot: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string("tests/fixtures/mcp_tool_schemas.json").unwrap(),
+    )
+    .unwrap();
+    let snapshot = snapshot.as_object().unwrap();
+    assert_eq!(snapshot.len(), 7);
+    for (name, schema) in snapshot {
+        let tool = result.tools.iter().find(|t| &t.name == name).unwrap();
+        assert_eq!(
+            &serde_json::to_value(&tool.input_schema).unwrap(),
+            schema,
+            "{name}"
+        );
+    }
+}
+
+// --- CLI subcommands print what the MCP tools return (task 6.3) ---
+
+fn run_cli(args: &[&str]) -> String {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_project-map-cli-rust"))
+        .args(args)
+        .output()
+        .expect("failed to run the CLI");
+    assert!(
+        out.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[tokio::test]
+async fn test_cli_doc_subcommands_match_the_mcp_tools() {
+    let (dir, index) = docs_index("cli");
+    let handler = docs_handler(&index);
+    // Build the index the CLI reads with the binary itself.
+    let root = dir.join("project").canonicalize().unwrap();
+    let out = dir.join("cli-out");
+    run_cli(&[
+        "build",
+        "--root",
+        root.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    let idx = out.to_str().unwrap();
+
+    let cases: Vec<(Vec<&str>, &str, serde_json::Value)> = vec![
+        (
+            vec!["doc", "search", "audit log"],
+            "doc_search",
+            serde_json::json!({"query": "audit log"}),
+        ),
+        (
+            vec!["doc", "search", "audit log", "--limit", "1"],
+            "doc_search",
+            serde_json::json!({"query": "audit log", "limit": 1}),
+        ),
+        (
+            vec!["doc", "outline", "docs/guide.md"],
+            "doc_outline",
+            serde_json::json!({"path": "docs/guide.md"}),
+        ),
+        (
+            vec!["doc", "section", "docs/guide.md", "usage"],
+            "doc_section",
+            serde_json::json!({"path": "docs/guide.md", "anchor": "usage"}),
+        ),
+        (
+            vec![
+                "doc",
+                "section",
+                "docs/guide.md",
+                "usage",
+                "--max-chars",
+                "40",
+            ],
+            "doc_section",
+            serde_json::json!({"path": "docs/guide.md", "anchor": "usage", "max_chars": 40}),
+        ),
+        (
+            vec!["doc", "links", "src/audit/log.rs", "--symbol", "AuditLog"],
+            "doc_links",
+            serde_json::json!({"path": "src/audit/log.rs", "symbol": "AuditLog"}),
+        ),
+        (vec!["doc", "terms"], "doc_terms", serde_json::json!({})),
+        (
+            vec!["doc", "terms", "--limit", "2"],
+            "doc_terms",
+            serde_json::json!({"limit": 2}),
+        ),
+        (vec!["api"], "api_surface", serde_json::json!({})),
+        (
+            vec!["doc", "outline", "nope.md"],
+            "doc_outline",
+            serde_json::json!({"path": "nope.md"}),
+        ),
+    ];
+    for (cli_args, tool, args) in cases {
+        let mut full = cli_args.clone();
+        full.extend(["--index", idx]);
+        let cli = run_cli(&full);
+        let mcp = call(&handler, tool, args).await;
+        assert_eq!(cli.trim_end(), mcp.trim_end(), "{cli_args:?}");
+    }
+    std::fs::remove_dir_all(dir).ok();
 }

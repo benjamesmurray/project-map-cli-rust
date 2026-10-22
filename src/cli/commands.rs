@@ -82,6 +82,20 @@ pub enum Commands {
         #[arg(short = 'C', long = "preview", num_args = 0..=1, default_missing_value = "3")]
         preview: Option<usize>,
     },
+    /// Query indexed documentation (Markdown, ADRs, specs)
+    Doc {
+        #[arg(short, long, default_value = ".project-map", global = true)]
+        index: String,
+        #[command(subcommand)]
+        command: DocCommands,
+    },
+    /// List the operations and schemas declared in OpenAPI specs
+    Api {
+        /// Restrict the listing to one spec file
+        path: Option<String>,
+        #[arg(short, long, default_value = ".project-map")]
+        index: String,
+    },
     /// Start the MCP server
     Mcp {
         #[arg(short, long)]
@@ -97,5 +111,41 @@ pub enum Commands {
         root: String,
         #[arg(short, long, default_value = ".project-map")]
         out: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DocCommands {
+    /// Search documentation sections by keyword
+    Search {
+        query: String,
+        /// Maximum number of sections to return
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
+    },
+    /// Show a document's heading tree with anchors and frontmatter
+    Outline { path: String },
+    /// Read one section's raw text by path and anchor
+    Section {
+        path: String,
+        anchor: String,
+        /// Maximum characters of section text to return
+        #[arg(long, default_value_t = 4000)]
+        max_chars: usize,
+    },
+    /// Docs that mention a code file or symbol, or symbols a document references
+    Links {
+        path: String,
+        /// Restrict a code file's links to one symbol
+        #[arg(short, long)]
+        symbol: Option<String>,
+    },
+    /// List recurring domain terms found in the documentation
+    Terms {
+        /// Only terms from documents under this path prefix
+        path_prefix: Option<String>,
+        /// Maximum number of terms to return
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
     },
 }

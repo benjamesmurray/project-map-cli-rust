@@ -18,22 +18,25 @@ use tracing_subscriber::fmt;
 
 use crate::core::orchestrator::rebuild_and_publish;
 use crate::core::query_engine::QueryEngine;
-use crate::core::toon::ToonFormatter;
+use crate::core::toon::{ToonFormatter, DEFAULT_MAX_CHARS};
 use crate::core::utils::{get_active_features, normalize_rel_path, render_tree};
 use crate::error::Result;
+
+const DEFAULT_DOC_LIMIT: usize = 10;
+const DEFAULT_TERMS_LIMIT: usize = 30;
 
 // --- Tool Definitions ---
 
 #[mcp_tool(
     name = "status",
-    description = "Returns current workspace context and available commands."
+    description = "Orient in the workspace before grepping: index health, the project tree, active spec features and doc counts. Start here to see what the map covers."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct StatusTool {}
 
 #[mcp_tool(
     name = "query",
-    description = "Search for symbols or get file context."
+    description = "Find where a symbol is defined, get a file's outline (every class and function with line numbers), or find files by name. Faster and more precise than grepping for definitions."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct QueryTool {
@@ -49,7 +52,7 @@ pub struct QueryTool {
 
 #[mcp_tool(
     name = "blast_radius",
-    description = "Identifies all components and files that depend on or import a specific symbol."
+    description = "Who depends on this symbol, across files and languages (grep cannot follow imports). Use before changing or deleting a function, class or type to see every file that imports or calls it."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct BlastRadiusTool {
@@ -61,7 +64,7 @@ pub struct BlastRadiusTool {
 
 #[mcp_tool(
     name = "plan",
-    description = "Analyze the architectural impact (fan-out) of a symbol before starting a refactor."
+    description = "Estimate how far a change to a symbol reaches (fan-out across dependents) before a refactor, so you can scope the work without searching file by file."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct PlanTool {
@@ -71,7 +74,7 @@ pub struct PlanTool {
 
 #[mcp_tool(
     name = "search",
-    description = "Search for logic using natural language keywords (e.g., 'auth', 'database')."
+    description = "A code-only keyword search for symbols and logic (e.g. 'auth', 'database'), ranked by relevance with snippet previews. Does not search documentation: use doc_search for Markdown, ADRs and specs."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct SearchTool {
@@ -83,7 +86,7 @@ pub struct SearchTool {
 
 #[mcp_tool(
     name = "fetch_symbol",
-    description = "Extract raw source code for a specific class or function."
+    description = "One function's or class's source without reading the whole file. Give the file path and symbol name to get just that definition."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct FetchSymbolTool {
@@ -95,10 +98,80 @@ pub struct FetchSymbolTool {
 
 #[mcp_tool(
     name = "init",
-    description = "Refresh the map index after significant code changes to maintain discovery accuracy."
+    description = "Rebuild the map index after significant code changes (new files, large refactors, branch switches) so every other tool answers from current code and docs."
 )]
 #[derive(JsonSchema, Deserialize, Serialize)]
 pub struct InitTool {}
+
+#[mcp_tool(
+    name = "doc_search",
+    description = "Find documentation sections (Markdown, ADRs, specs) about a topic by keyword, instead of grepping the docs. Returns path, anchor, heading and a snippet; read one with doc_section."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct DocSearchTool {
+    /// Keywords to look for in headings, frontmatter and section text
+    pub query: String,
+    /// Maximum number of sections to return (defaults to 10)
+    pub limit: Option<u32>,
+}
+
+#[mcp_tool(
+    name = "doc_outline",
+    description = "Show a Markdown document's heading tree with anchors, plus its frontmatter, so you can pick a section without reading the whole file."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct DocOutlineTool {
+    /// Markdown file path
+    pub path: String,
+}
+
+#[mcp_tool(
+    name = "doc_section",
+    description = "Read one section of a document by path and anchor (from doc_outline or doc_search), truncated at max_chars, instead of opening the whole file."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct DocSectionTool {
+    /// Markdown file path
+    pub path: String,
+    /// Section anchor, as listed by doc_outline or doc_search
+    pub anchor: String,
+    /// Maximum characters of section text to return (defaults to 4000)
+    pub max_chars: Option<u32>,
+}
+
+#[mcp_tool(
+    name = "doc_links",
+    description = "Find the documentation that mentions a code file or symbol (code to docs), or the symbols a document references (docs to code). Use before changing code to see which docs and ADRs describe it."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct DocLinksTool {
+    /// File path, either a code file or a Markdown document
+    pub path: String,
+    /// Restrict a code file's links to one symbol
+    pub symbol: Option<String>,
+}
+
+#[mcp_tool(
+    name = "doc_terms",
+    description = "List recurring domain vocabulary (actors, bold concepts) in the docs with the sections that use them, to learn a project's language before searching."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct DocTermsTool {
+    /// Only terms from documents under this path prefix
+    pub path_prefix: Option<String>,
+    /// Maximum number of terms to return (defaults to 30)
+    pub limit: Option<u32>,
+}
+
+#[mcp_tool(
+    name = "api_surface",
+    description = "List the operations (METHOD /path) and schemas declared in OpenAPI specs, without reading the YAML or JSON."
+)]
+#[derive(JsonSchema, Deserialize, Serialize)]
+pub struct ApiSurfaceTool {
+    /// Restrict the listing to one spec file
+    pub path: Option<String>,
+}
 
 // --- Server Implementation ---
 
@@ -226,6 +299,14 @@ impl McpServerHandler {
     ) -> Self {
         Self { root, out, engine }
     }
+
+    /// Runs `f` against the loaded engine, or reports that no index is loaded.
+    fn with_engine(&self, f: impl FnOnce(&QueryEngine) -> String) -> String {
+        match *self.engine.read().unwrap() {
+            Some(ref engine) => f(engine),
+            None => "Error: Index not loaded".to_string(),
+        }
+    }
 }
 
 #[async_trait]
@@ -253,6 +334,12 @@ impl ServerHandler for McpServerHandler {
                 SearchTool::tool(),
                 FetchSymbolTool::tool(),
                 InitTool::tool(),
+                DocSearchTool::tool(),
+                DocOutlineTool::tool(),
+                DocSectionTool::tool(),
+                DocLinksTool::tool(),
+                DocTermsTool::tool(),
+                ApiSurfaceTool::tool(),
             ],
             next_cursor: None,
             meta: None,
@@ -489,6 +576,49 @@ impl ServerHandler for McpServerHandler {
                 } else {
                     "Error: Index not loaded".to_string()
                 }
+            }
+            "doc_search" => {
+                let args: DocSearchTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| {
+                    let limit = args.limit.map_or(DEFAULT_DOC_LIMIT, |l| l as usize);
+                    engine.render_doc_search(&args.query, limit, DEFAULT_MAX_CHARS)
+                })
+            }
+            "doc_outline" => {
+                let args: DocOutlineTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| engine.render_doc_outline(&args.path, DEFAULT_MAX_CHARS))
+            }
+            "doc_section" => {
+                let args: DocSectionTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| {
+                    let max_chars = args.max_chars.map_or(DEFAULT_MAX_CHARS, |m| m as usize);
+                    engine.render_doc_section(&args.path, &args.anchor, max_chars)
+                })
+            }
+            "doc_links" => {
+                let args: DocLinksTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| {
+                    engine.render_doc_links(&args.path, args.symbol.as_deref(), DEFAULT_MAX_CHARS)
+                })
+            }
+            "doc_terms" => {
+                let args: DocTermsTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| {
+                    let limit = args.limit.map_or(DEFAULT_TERMS_LIMIT, |l| l as usize);
+                    engine.render_doc_terms(args.path_prefix.as_deref(), limit, DEFAULT_MAX_CHARS)
+                })
+            }
+            "api_surface" => {
+                let args: ApiSurfaceTool =
+                    serde_json::from_value(arguments).map_err(|e| CallToolError(Box::new(e)))?;
+                self.with_engine(|engine| {
+                    engine.render_api_surface(args.path.as_deref(), DEFAULT_MAX_CHARS)
+                })
             }
             "init" => match rebuild_and_publish(&self.root, &self.out) {
                 Ok(new_engine) => {

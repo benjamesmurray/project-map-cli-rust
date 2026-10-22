@@ -7,6 +7,7 @@
 
 use crate::core::graph::{DocMeta, DocTerm, EdgeType, NodeType, STALE_INDEX_MESSAGE};
 use crate::core::query_engine::QueryEngine;
+use crate::core::toon::ToonFormatter;
 use crate::core::utils::normalize_rel_path;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -118,6 +119,51 @@ pub struct DocTermsView {
 
 /// Anchors listed when a requested anchor is unknown.
 const ANCHORS_LISTED: usize = 30;
+
+/// The query, run and rendered as the text the MCP tools and CLI subcommands
+/// print: TOON on success, the user-facing message on `Err`.
+impl QueryEngine {
+    pub fn render_doc_search(&self, query: &str, limit: usize, max_chars: usize) -> String {
+        self.search_docs(query, limit)
+            .map(|r| ToonFormatter::format_doc_search(query, &r, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+
+    pub fn render_doc_outline(&self, path: &str, max_chars: usize) -> String {
+        self.doc_outline(path)
+            .map(|v| ToonFormatter::format_doc_outline(&v, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+
+    pub fn render_doc_section(&self, path: &str, anchor: &str, max_chars: usize) -> String {
+        self.doc_section(path, anchor)
+            .map(|v| ToonFormatter::format_doc_section(&v, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+
+    pub fn render_doc_links(&self, path: &str, symbol: Option<&str>, max_chars: usize) -> String {
+        self.doc_links(path, symbol)
+            .map(|v| ToonFormatter::format_doc_links(&v, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+
+    pub fn render_doc_terms(
+        &self,
+        path_prefix: Option<&str>,
+        limit: usize,
+        max_chars: usize,
+    ) -> String {
+        self.doc_terms(path_prefix, limit)
+            .map(|v| ToonFormatter::format_doc_terms(&v, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+
+    pub fn render_api_surface(&self, path: Option<&str>, max_chars: usize) -> String {
+        self.api_surface(path)
+            .map(|v| ToonFormatter::format_api_surface(&v, max_chars))
+            .unwrap_or_else(|e| e)
+    }
+}
 
 impl QueryEngine {
     /// The shared stale message for an index without schema 3 doc data.

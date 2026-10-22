@@ -1,8 +1,8 @@
 use clap::Parser;
-use project_map_cli_rust::cli::commands::{Cli, Commands};
+use project_map_cli_rust::cli::commands::{Cli, Commands, DocCommands};
 use project_map_cli_rust::core::orchestrator::rebuild_and_publish;
 use project_map_cli_rust::core::query_engine::QueryEngine;
-use project_map_cli_rust::core::toon::ToonFormatter;
+use project_map_cli_rust::core::toon::{ToonFormatter, DEFAULT_MAX_CHARS};
 use project_map_cli_rust::core::utils::{get_active_features, normalize_rel_path, render_tree};
 use project_map_cli_rust::error::Result;
 use project_map_cli_rust::mcp::server::McpServer;
@@ -137,6 +137,35 @@ async fn main() -> Result<()> {
             let engine = QueryEngine::load(&get_index_path(&index))?;
             let matches = engine.find_entities_with_preview(&query, preview);
             println!("{}", ToonFormatter::format_entity_matches(&query, &matches));
+        }
+        Commands::Doc { index, command } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
+            let max = DEFAULT_MAX_CHARS;
+            let text = match command {
+                DocCommands::Search { query, limit } => {
+                    engine.render_doc_search(&query, limit, max)
+                }
+                DocCommands::Outline { path } => engine.render_doc_outline(&path, max),
+                DocCommands::Section {
+                    path,
+                    anchor,
+                    max_chars,
+                } => engine.render_doc_section(&path, &anchor, max_chars),
+                DocCommands::Links { path, symbol } => {
+                    engine.render_doc_links(&path, symbol.as_deref(), max)
+                }
+                DocCommands::Terms { path_prefix, limit } => {
+                    engine.render_doc_terms(path_prefix.as_deref(), limit, max)
+                }
+            };
+            println!("{}", text);
+        }
+        Commands::Api { path, index } => {
+            let engine = QueryEngine::load(&get_index_path(&index))?;
+            println!(
+                "{}",
+                engine.render_api_surface(path.as_deref(), DEFAULT_MAX_CHARS)
+            );
         }
         Commands::Mcp { watch, root, out } => {
             let server = McpServer::with_paths(

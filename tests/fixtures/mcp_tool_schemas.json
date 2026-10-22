@@ -1,0 +1,98 @@
+{
+  "blast_radius": {
+    "properties": {
+      "path": {
+        "description": "File path where the symbol is defined",
+        "type": "string"
+      },
+      "symbol": {
+        "description": "Symbol name to check",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "symbol"
+    ],
+    "type": "object"
+  },
+  "fetch_symbol": {
+    "properties": {
+      "path": {
+        "description": "File path",
+        "type": "string"
+      },
+      "symbol": {
+        "description": "Symbol name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "symbol"
+    ],
+    "type": "object"
+  },
+  "init": {
+    "properties": {},
+    "type": "object"
+  },
+  "plan": {
+    "properties": {
+      "symbol": {
+        "description": "Symbol name to analyze",
+        "type": "string"
+      }
+    },
+    "required": [
+      "symbol"
+    ],
+    "type": "object"
+  },
+  "query": {
+    "properties": {
+      "filename": {
+        "description": "Search for filenames across the tree",
+        "nullable": true,
+        "type": "string"
+      },
+      "path": {
+        "description": "File path to get outline",
+        "nullable": true,
+        "type": "string"
+      },
+      "preview": {
+        "description": "Number of context lines for snippet preview (defaults to 3)",
+        "nullable": true,
+        "type": "integer"
+      },
+      "query": {
+        "description": "Search query for symbols",
+        "nullable": true,
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "search": {
+    "properties": {
+      "preview": {
+        "description": "Number of context lines for snippet preview (defaults to 3)",
+        "nullable": true,
+        "type": "integer"
+      },
+      "query": {
+        "description": "Natural language query",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  },
+  "status": {
+    "properties": {},
+    "type": "object"
+  }
+}

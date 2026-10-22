@@ -261,7 +261,7 @@
       "id": "6.1",
       "title": "Phase 6: Register the Six MCP Tools",
       "description": "In src/mcp/server.rs register doc_search, doc_outline, doc_section, doc_links, doc_terms and api_surface with the parameters and defaults in the spec (limit=10, max_chars=4000, limit=30, optional symbol/path_prefix/path), wired to the QueryEngine methods. Tests in tests/mcp_test.rs (Verification 4): each tool called over the MCP harness on the fixture returns the expected TOON; each tool's truncation marker appears with a small budget or a large fixture; the stale message appears against a v2 index. Existing seven tools' tests unchanged. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "5.7"
       ]
@@ -270,7 +270,7 @@
       "id": "6.2",
       "title": "Phase 6: Rewrite All Thirteen Tool Descriptions",
       "description": "Rewrite every MCP tool description (status, query, blast_radius, plan, search, fetch_symbol, init and the six new tools) to name the question it answers better than grep/text search, using the spec's examples for blast_radius, fetch_symbol and query; search states it is code-only and points to doc_search for documentation. Only description strings change: names, parameters and outputs stay identical (assert the parameter schemas of the existing seven are unchanged against a snapshot taken before the edit). Test (Verification 6): list tools, assert 13 tools, every description non-empty and containing its use-case phrase. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "6.1"
       ]
@@ -279,7 +279,7 @@
       "id": "6.3",
       "title": "Phase 6: CLI Subcommands",
       "description": "In src/cli add 'doc search <query> [--limit]', 'doc outline <path>', 'doc section <path> <anchor> [--max-chars]', 'doc links <path> [--symbol]', 'doc terms [path_prefix] [--limit]' and 'api [path]', sharing the QueryEngine methods and TOON output with MCP. Integration tests in tests/integration_test.rs: each subcommand on the fixture matches the MCP output for the same arguments; --help lists them. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "5.7"
       ]
