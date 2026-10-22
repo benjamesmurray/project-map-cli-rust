@@ -233,7 +233,7 @@
       "id": "5.1",
       "title": "Phase 5: README and CHANGELOG",
       "description": "README: the 1.5 tool-deferral finding in 'Using with Claude Code' (with the exact setting, if any, for the owner to apply), the server instructions, the format argument and JSON contract (envelope, field table, error codes, contract versioning rule), status Git fields and at_head, max_depth, modules, imports and package-name rules, JavaScript support, server-mode guarantees, deterministic ordering, schema 4 upgrade note (0.3.0 watchers refuse to overwrite a schema-4 index; restart servers after upgrading so they can read Git fields and imports). CHANGELOG 0.4.0 entry including the grammar choice and JS skip rules from 2.3, Rust import resolution, the blast_radius meaning change (dependents not callers; own file no longer listed) and the list-order change. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.6"
       ]
@@ -242,7 +242,7 @@
       "id": "5.2",
       "title": "Phase 5 Gate",
       "description": "Phase 5 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase5_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 6.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "5.1"
       ]

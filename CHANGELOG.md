@@ -5,6 +5,41 @@ All notable changes to `project-map-cli-rust` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - Unreleased
+
+### Upgrade note (read first)
+The index `schema_version` is now 4. After installing 0.4.0, **restart every running `project-map-cli-rust mcp` process** and run `project-map refresh` once per workspace. A 0.3.0 watcher refuses to overwrite a schema-4 index (its forward guard logs it and skips the rebuild), so it cannot damage one, but it cannot read the Git fields or imports either. A schema-3 index still serves the code and doc tools, is reported as stale with `commit: null` and is never rewritten by a query; `imports` returns `index_stale` on it.
+
+### Breaking
+- **`blast_radius` now reports dependents, not callers.** The graph has no call edges. The result is a breadth-first walk over incoming `Imports`, `Produces`/`Consumes` and `Configures` edges, each dependent once at its shortest `depth` (1 is direct). The target's own file and enclosing symbols are no longer listed (0.3.0 listed the target's own file as a dependent), so counts change. The TOON `Summary:` gains `Direct Dependents: n | Transitive: m`, and `Unique Files Affected` is the number of distinct dependent files.
+- **List order changed.** Every list now has a total order: `search`/`query` by path, line, name; `blast_radius`/`plan` by depth, path, line, name; a file outline lists imports first and then symbols in source order (it was reverse source order). Target selection is deterministic too: the first match by path, then line.
+- **Every error now sets `is_error`** on the MCP result, in TOON as well as JSON. The error text is unchanged.
+- `fetch_symbol` reads the file relative to the index root rather than the server's working directory, and a byte range outside the file is reported as an error instead of falling back to a line-based snippet.
+
+### Added
+- **JSON output.** `format: "json"` on every MCP tool and `--format toon|json` on the CLI. A stable envelope (`tool`, `contract`, `index`, `truncated`, `total`, `summary`, `results`), the error codes `index_missing`, `index_stale`, `not_found`, `invalid_argument` and `io_error`, and the same object in `structured_content`. `contract` is 1 and moves independently of `schema_version`; 39 golden envelopes pin it. JSON is never cut by characters. TOON stays the default.
+- **`limit`** on `search`, `query`, `blast_radius` and `plan` (JSON defaults 50, 50, 200, 200). In TOON a given `limit` cuts the list and appends `[limit N: M matched]`; omitted, TOON behaves as in 0.3.0.
+- **`max_depth`** on `status` and `doc_outline`. TOON appends `[tree cut at depth N]` or `[outline cut at depth N]` when it cut something.
+- **Git state.** A build records the commit, whether the tree was dirty and the branch. `status` adds `head_now`, `dirty_now`, `at_head` and `git_error`. Git runs with `GIT_OPTIONAL_LOCKS=0` and a timeout (5 s per call at build, one 1.5 s budget at query); without Git or a repository the fields are `null` and builds succeed. `git status` ignores `.project-map`, so building does not make the tree dirty.
+- **`modules` tool and CLI subcommand**: recursive `files`, `code_files`, `symbols`, `doc_files` and `doc_sections` per directory.
+- **`imports` tool and CLI subcommand**: every import of an external package with its line, text, package name and `resolved` flag. The index keeps all imports in a side table, resolved or not. Package-name rules per language are in the README.
+- **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`): symbols and imports. Grammar choice: the existing `tree-sitter-typescript` TSX grammar parsed every JavaScript fixture without ERROR nodes, so `tree-sitter-javascript` was not added. JavaScript files are reported as language `typescript`. `require("x")` and `import("x")` with a string literal are captured in JavaScript and TypeScript.
+- **Built and minified JavaScript is skipped** (no symbols, no imports, no error line): a file named `*.min.*`, larger than 256 KB, or with a line over 1,000 characters in its first 32 KB. TypeScript is not affected.
+- **Rust imports.** `use` declarations and `extern crate` are captured (one record per statement). `crate::`, `self::`, `super::` and own-crate-name paths resolve to `Imports` edges (to the symbol, else the file; each leaf of a grouped `use`; globs and `as` handled), so `blast_radius` now works on Rust. The crate root is the nearest ancestor `Cargo.toml`. Rust files skip the suffix-match resolution strategy, which would link `use` paths to unrelated files. On this repository `Imports` edges rise from 17 to 215.
+- **Blast radius seeding.** A `matched: file` target also starts from the file's symbols, and a method is counted through its enclosing symbol (the summary's `via`, with a TOON note), because no import names a method.
+- **Server instructions** sent in the MCP initialize result, so a client that defers the tools still shows the model what the index covers. README section "Using with Claude Code" records the deferral finding and the settings (`alwaysLoad`, `ENABLE_TOOL_SEARCH`).
+- **Status** TOON adds a `Commit: 1a2b3c4 (clean) | at_head: yes` line.
+- Internals: `core/json_out.rs` (envelope) and `core/tools.rs` (one dispatcher used by the MCP server and the CLI, so the two cannot drift apart).
+
+### Changed
+- `status` with a schema-3 index shows "predates Git and import records" and keeps the doc tools working.
+- A missing index gives `index_missing` from every tool except `status`. A stale one gives `index_stale` only where data is absent (`imports`, doc tools on schema < 3); code tools keep answering.
+- The tracing subscriber writes ANSI escapes only when stderr is a terminal.
+- `NodeType` has `Eq` and `as_str()`.
+
+### Server mode (verified by spawned-binary tests)
+- `mcp` without `-w` starts no watcher and never builds on its own; `status` answers within 2 s on an empty directory; stdout carries only JSON-RPC frames; stderr has no ANSI escapes.
+
 ## [0.3.0] - 2026-10-22
 
 ### Upgrade note (read first)
