@@ -242,7 +242,7 @@
       "id": "5.2",
       "title": "Phase 5 Gate",
       "description": "Phase 5 gate: cargo fmt --check, cargo clippy --all-targets -- -D warnings and the full cargo test are clean. Write projects/active/machine-interface-for-ost/reports/phase5_report.md (what was built, test counts, any deviation from the Specification and why). Commit and push, then STOP and wait for the owner's approval before starting Phase 6.",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [
         "5.1"
       ]
