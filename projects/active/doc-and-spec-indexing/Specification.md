@@ -30,7 +30,12 @@ This tool stays deterministic: no LLM, no persona logic. Persona extraction is O
   4. **Type-qualified symbols** (`Graph::load`, `Graph.load`): a symbol named by the last segment whose byte range lies inside a symbol named by the preceding segment, in the same file. The index has no symbol → symbol `Contains` edges, so nesting comes from ranges; Rust `impl` blocks are indexed under the type's name, which makes this work. Linked only if exactly one such symbol exists.
   5. **Bare names** (`load`): linked only if **exactly one** indexed symbol has that name, the name is at least 4 characters, and it is not in a small denylist of generic names (`new`, `main`, `default`, `init`, `run`, `test`, `self`, `build`, `get`, `set`, ...).
 
-  Anything not linked is counted as either unresolved or ambiguous, and both counts are reported by `status`.
+  Notes on the rules:
+  - A Rust `impl` block is indexed under its type's name but is not a second definition: for rules 3 and 5, a name that matches a struct and its impl block counts as one symbol (the struct); `impl` blocks only locate members for rule 4.
+  - Bare names that are shorter than 4 characters or on the denylist are never linked and resolve as unresolved, even if only one symbol has the name.
+  - A `path:line` mention whose line lies in no symbol links to the file.
+
+  Anything not linked is counted as either unresolved or ambiguous, and both counts are reported by `status`, with one exception: a **bare name in fenced code** that matches no symbol is not counted. Fenced blocks are mostly shell, config and example identifiers (on `/opt/wde` they are the largest mention source, and almost none resolve), so counting them would bury the unresolved links and paths. An ambiguous fenced name still counts, because it matches real symbols.
 - **OpenAPI**: a file is an OpenAPI spec if it is named `openapi.{yaml,yml,json}` or `swagger.*`, or if it is a YAML/JSON file of at most **1 MB** whose first 1 KB (after a BOM, whitespace and comments) has a top-level `openapi`/`swagger` key. Only then is it fully parsed. Detected specs produce `ApiOperation` nodes (`METHOD /path`, `operationId`, summary) and `ApiSchema` nodes (component schema names), located at their method or schema key (line, and bytes to the end of that line; found by key search because parsed values carry no spans, falling back to the file start) with `Contains` edges from the spec file, and **skip** the generic YAML symbol extraction (`extract_yaml_symbols`), so they are not indexed twice. Other JSON files are never fully parsed for detection.
 - **Terms**: a cheap, deterministic hint list of candidate actors and domain vocabulary, computed at index time and stored, because section text is not stored. Candidates, taken from paragraph and list text only (not headings, code or link URLs), are:
   - runs of 2–4 consecutive capitalised words, after stripping leading stopwords (`The`, `A`, `An`, `This`, `That`, `These`, `Those`, `Our`, `Each`, `Every`, `When`, `If`, `In`, `For`, ...). Words are separated by whitespace only, so punctuation, code spans and bold spans end a run. A run still longer than 4 words after stripping is dropped, not split, because any split would be an arbitrary fragment;
@@ -108,6 +113,9 @@ pub enum NodeType { File, Symbol, KafkaTopic, DatabaseTable, ConfigEnvVar,
 
 // DocSection NodeData: path, name = heading text, kind = "h2", line, start_byte, end_byte,
 //                      role = Some(anchor_slug), docstring = None
+// ApiOperation NodeData: name = "METHOD /path", kind = lower-case method, role = operationId,
+//                        docstring = summary, line/bytes at the method key
+// ApiSchema NodeData:    name = schema name, kind = "schema", role = None, docstring = None
 // Side tables serialised with the index (both #[serde(default)]):
 //   doc_meta:  BTreeMap<String /* path */, DocMeta>
 //   doc_terms: BTreeMap<String /* directory */, Vec<DocTerm>>   // ≤ 50 per directory

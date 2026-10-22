@@ -267,6 +267,21 @@ impl ToonFormatter {
                 output.push_str(&format!("Files: {}\n", meta.file_count));
                 output.push_str(&format!("Symbols: {}\n", meta.symbol_count));
                 output.push_str(&format!("Edges: {}\n", meta.edge_count));
+                // A schema-2 index has no doc counts; the stale line below says so.
+                if !engine.is_stale() {
+                    output.push_str(&format!("Doc Files: {}\n", meta.doc_file_count));
+                    output.push_str(&format!("Doc Sections: {}\n", meta.section_count));
+                    output.push_str(&format!("Doc References: {}\n", meta.reference_count));
+                    output.push_str(&format!(
+                        "Unresolved Mentions: {}\n",
+                        meta.unresolved_mention_count
+                    ));
+                    output.push_str(&format!(
+                        "Ambiguous Mentions: {}\n",
+                        meta.ambiguous_mention_count
+                    ));
+                    output.push_str(&format!("API Operations: {}\n", meta.api_operation_count));
+                }
             } else {
                 output.push_str(&format!("Files: {}\n", file_count));
                 output.push_str(&format!("Symbols: {}\n", symbol_count));

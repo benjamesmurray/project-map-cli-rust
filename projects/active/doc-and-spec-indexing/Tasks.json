@@ -118,7 +118,7 @@
       "id": "4.1",
       "title": "Phase 4: Doc Pass in the Orchestrator",
       "description": "After the code pass in build_index, run the doc pass: for each indexed .md file, parse_markdown and add DocSection nodes (path, name, kind, line, start_byte, end_byte, role = anchor, docstring None) with Contains edges file -> top sections -> subsections; store DocMeta in doc_meta keyed by normalised path. For each OpenAPI file, add ApiOperation nodes (name 'METHOD /path', operationId/summary carried in role/docstring as documented) and ApiSchema nodes, with Contains edges from the file. Section text is not stored. Respect output-dir exclusion and path normalisation from 0.2.0. Integration test on tests/fixtures/docs: expected section count and tree, anchors, DocMeta entries, API node counts, and index JSON contains no section body text (assert a unique sentence from the fixture is absent). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.3",
         "2.2",
@@ -131,7 +131,7 @@
       "id": "4.2",
       "title": "Phase 4: Mention Resolution Rules 1-3",
       "description": "docs::resolve_mention(mention, tables) -> Resolution { Linked(targets) | Unresolved | Ambiguous }, with tables built once per build (normalised path -> file node; per-file name -> symbol nodes; per-file line -> innermost symbol by range). Rule 1 MarkdownLink: resolve relative to the document's directory, normalise, link if an indexed file. Rule 2 Path: './' and plain forms normalise identically; file edge if indexed. Rule 3 PathSymbol (path::sym): resolve path then the named symbol in that file (Ambiguous if the file has more than one); PathLine (path:N): innermost symbol whose line range contains N, else the file. Unit tests for every fixture case including missing files (Unresolved) and '..' links leaving the repo (Unresolved). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.4",
         "4.1"
@@ -141,7 +141,7 @@
       "id": "4.3",
       "title": "Phase 4: Mention Resolution Rules 4-5",
       "description": "Rule 4 TypeMember (Type::method, Type.method): candidates are symbols named by the last segment whose byte range lies inside a symbol named by the preceding segment in the same file (the index has no symbol->symbol Contains edges; Rust impl blocks are indexed under the type's name). Link only if exactly one candidate; more is Ambiguous; none is Unresolved. Rule 5 BareName: link only if exactly one symbol in the whole index has the name, the name is at least 4 characters, and it is not in the denylist (new, main, default, init, run, test, self, build, get, set, plus a documented short list); otherwise Ambiguous (multiple) or Unresolved. Rules apply in order; the first rule that matches the mention's form decides. Unit tests: Graph::load-style member resolved via impl range, duplicated bare name Ambiguous, denylisted and short names not linked, a type-qualified name where the type exists in two files is Ambiguous. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.2"
       ]
@@ -150,7 +150,7 @@
       "id": "4.4",
       "title": "Phase 4: Link Pass and Mention Counts",
       "description": "After the doc pass, resolve every collected mention and add References edges from the attributed (deepest) DocSection to each linked file or symbol, deduplicating identical edges. Count Unresolved and Ambiguous mentions for the meta block. Integration test (Verification 1): on the fixture index, the expected References edges exist from the expected sections; no ancestor section carries a child's edge; unresolved and ambiguous totals match hand-counted fixture values. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "4.3"
       ]
@@ -159,7 +159,7 @@
       "id": "4.5",
       "title": "Phase 4: Term Aggregation per Directory",
       "description": "Aggregate term candidates per directory (the doc file's parent directory, normalised): keep terms occurring at least twice in that directory; order by count descending then term ascending; keep at most 50; for each keep at most 5 (path, anchor) sections, the first by path then byte offset, deduplicated. Store in doc_terms. Unit and integration tests: once-only term dropped, ordering tie-break, cap of 50 with a generated fixture of 60 terms, cap of 5 sections, deterministic output across two builds (byte-identical doc_terms). cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "2.5",
         "4.1"
@@ -169,7 +169,7 @@
       "id": "4.6",
       "title": "Phase 4: Index Meta Doc Counts and Status",
       "description": "Populate doc_file_count, section_count, reference_count, unresolved_mention_count, ambiguous_mention_count and api_operation_count in IndexMeta. status prints them (doc files, sections, references, unresolved and ambiguous mentions, API operations). Existing degenerate-index WARNING logic unaffected. Test: status on the fixture index shows the expected numbers; status on a v2 index shows the stale line instead of doc counts. cargo test passes.",
-      "status": "pending",
+      "status": "completed",
       "dependencies": [
         "1.4",
         "4.4"

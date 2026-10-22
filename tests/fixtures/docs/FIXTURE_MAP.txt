@@ -97,3 +97,20 @@ match, so some lines are wrong (openapi at line 1 matches the comment).
 Version strings like 3.0.0 also pass the Kafka topic heuristic. Both are
 existing bugs, out of scope for this feature. 0.2.0 also gave openapi.yaml
 21 generic symbols and 2 such topics; 3.3 removes them.
+
+Phase 4 results (hand-counted; asserted in tests/docs_index_test.rs)
+---------------------------------------------------------------------
+Index of the whole fixture: 5 doc files, 27 sections, 8 API operations,
+3 API schemas, 2 DocMeta entries (004, 005).
+Link pass: 17 References edges, 8 unresolved, 3 ambiguous.
+- links.md, 12 edges: file-level log.rs; markdown-links: log.rs, guide.md;
+  paths: retention.rs, invoice.py; qualified-symbols: append, new, log.rs
+  (the `log.rs:12` and `AuditLog::append` mentions both reach append: one
+  edge); bare-names: rotate_segments; fenced-code: new, verify_chain,
+  retention.rs. 6 unresolved (Cargo.toml, missing.rs, nothing.rs, new, run,
+  does_not_exist), 2 ambiguous (RetentionPolicy::apply, flush_buffer).
+- ADR-004: append, rotate_segments. ADR-005: retention.rs. guide.md: log.rs
+  (the link) and AuditLog (the heading's code span).
+- guide.md's `Casting Director` code span gives two unknown bare names
+  (2 unresolved); ADR-005's bare `RetentionPolicy` is ambiguous (Rust and
+  Python). Unresolved bare names in fenced code are not counted (4.3 rule).

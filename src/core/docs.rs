@@ -1,7 +1,8 @@
-use crate::core::graph::DocMeta;
+use crate::core::graph::{DocMeta, DocTerm};
+use petgraph::graph::NodeIndex;
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 use serde_yaml::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
@@ -989,6 +990,362 @@ fn collapse_whitespace(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A term must occur at least this often in a directory to be kept.
+pub const TERM_MIN_COUNT: u32 = 2;
+/// Terms kept per directory.
+pub const TERMS_PER_DIR: usize = 50;
+/// Sections kept per term.
+pub const SECTIONS_PER_TERM: usize = 5;
+
+/// Aggregates term candidates per directory (the doc file's parent, `.` for the
+/// root). Terms occurring at least twice are kept, ordered by count descending
+/// then term ascending, at most 50 per directory; each keeps at most 5 distinct
+/// `(path, anchor)` sections, the first by path then byte offset. A term before the
+/// first heading has the empty anchor. The result does not depend on input order.
+pub fn aggregate_terms<'a>(
+    docs: impl IntoIterator<Item = (&'a str, &'a DocOutline)>,
+) -> BTreeMap<String, Vec<DocTerm>> {
+    /// (count, [(path, byte, anchor)])
+    type Seen<'a> = (u32, Vec<(&'a str, usize, &'a str)>);
+    let mut dirs: BTreeMap<&str, HashMap<&str, Seen>> = BTreeMap::new();
+    for (path, outline) in docs {
+        let dir = path.rsplit_once('/').map_or(".", |(d, _)| d);
+        let terms = dirs.entry(dir).or_default();
+        for cand in &outline.term_candidates {
+            let anchor = cand
+                .section
+                .map_or("", |i| outline.sections[i].anchor.as_str());
+            let entry = terms.entry(cand.term.as_str()).or_default();
+            entry.0 += 1;
+            entry.1.push((path, cand.byte, anchor));
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    for (dir, terms) in dirs {
+        let mut kept: Vec<_> = terms
+            .into_iter()
+            .filter(|(_, (count, _))| *count >= TERM_MIN_COUNT)
+            .collect();
+        kept.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then_with(|| a.0.cmp(b.0)));
+        kept.truncate(TERMS_PER_DIR);
+        if kept.is_empty() {
+            continue;
+        }
+        let list = kept
+            .into_iter()
+            .map(|(term, (count, mut at))| {
+                at.sort_unstable_by_key(|&(path, byte, _)| (path, byte));
+                let mut seen = HashSet::new();
+                let sections = at
+                    .into_iter()
+                    .filter(|&(path, _, anchor)| seen.insert((path, anchor)))
+                    .take(SECTIONS_PER_TERM)
+                    .map(|(path, _, anchor)| (path.to_string(), anchor.to_string()))
+                    .collect();
+                DocTerm {
+                    term: term.to_string(),
+                    count,
+                    sections,
+                }
+            })
+            .collect();
+        out.insert(dir.to_string(), list);
+    }
+    out
+}
+
+/// Bare names that are never linked: too generic to point at one symbol.
+/// Names under `BARE_NAME_MIN_LEN` characters are never linked either.
+const BARE_NAME_DENYLIST: &[&str] = &[
+    "new", "main", "default", "init", "run", "test", "self", "build", "get", "set", "args",
+    "clone", "close", "config", "create", "data", "delete", "drop", "error", "exit", "format",
+    "from", "handle", "help", "index", "into", "item", "items", "list", "name", "next", "none",
+    "open", "parse", "path", "process", "read", "result", "setup", "size", "some", "start",
+    "state", "stop", "this", "type", "update", "value", "write",
+];
+const BARE_NAME_MIN_LEN: usize = 4;
+
+/// How a mention resolved against the index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Resolution {
+    /// The file or symbol nodes to draw `References` edges to.
+    Linked(Vec<NodeIndex>),
+    /// Nothing matched, or the name is too generic to try.
+    Unresolved,
+    /// More than one candidate; no guess is made.
+    Ambiguous,
+}
+
+/// A code symbol a mention can resolve to.
+#[derive(Debug, Clone)]
+pub struct SymbolRef {
+    pub node: NodeIndex,
+    pub name: String,
+    /// 1-based start line.
+    pub line: usize,
+    pub start_byte: usize,
+    pub end_byte: usize,
+    /// A Rust `impl` block, indexed under its type's name. It locates members but
+    /// is not a second definition of the type.
+    pub is_impl: bool,
+}
+
+/// Lookup tables for the link pass, built once per build.
+///
+/// Paths are as indexed, which keeps the build root as a prefix when it was given
+/// relative. Mentions are resolved in root-relative form (doc code paths are
+/// written relative to the index root, Markdown links relative to the document)
+/// and the prefix is put back for the lookup.
+#[derive(Debug, Default)]
+pub struct ResolveTables {
+    prefix: String,
+    files: HashMap<String, NodeIndex>,
+    file_symbols: HashMap<String, Vec<SymbolRef>>,
+    /// name -> (file path, index into `file_symbols[path]`)
+    by_name: HashMap<String, Vec<(String, usize)>>,
+    line_starts: HashMap<String, Vec<usize>>,
+}
+
+impl ResolveTables {
+    /// `prefix` is the indexed form of the build root ("" when paths are root-relative).
+    pub fn new(prefix: &str) -> Self {
+        Self {
+            prefix: prefix.trim_end_matches('/').to_string(),
+            ..Self::default()
+        }
+    }
+
+    pub fn add_file(&mut self, path: &str, node: NodeIndex) {
+        self.files.insert(path.to_string(), node);
+    }
+
+    pub fn add_symbol(&mut self, path: &str, symbol: SymbolRef) {
+        let list = self.file_symbols.entry(path.to_string()).or_default();
+        self.by_name
+            .entry(symbol.name.clone())
+            .or_default()
+            .push((path.to_string(), list.len()));
+        list.push(symbol);
+    }
+
+    /// Line starts of an indexed file, needed to resolve `path:line` mentions
+    /// (symbols carry a start line and a byte range, not an end line).
+    pub fn set_line_text(&mut self, path: &str, text: &str) {
+        self.line_starts.insert(path.to_string(), line_starts(text));
+    }
+
+    /// The indexed file a `path:line` mention points at, if it is one.
+    pub fn line_file(&self, form: &MentionForm) -> Option<&str> {
+        let MentionForm::PathLine { path, .. } = form else {
+            return None;
+        };
+        let indexed = self.code_path(path)?;
+        self.files.get_key_value(&indexed).map(|(k, _)| k.as_str())
+    }
+
+    /// Root-relative form of an indexed path.
+    fn to_rel<'a>(&self, indexed: &'a str) -> Option<&'a str> {
+        if self.prefix.is_empty() {
+            return Some(indexed);
+        }
+        indexed.strip_prefix(&self.prefix)?.strip_prefix('/')
+    }
+
+    fn to_indexed(&self, rel: &str) -> String {
+        if self.prefix.is_empty() {
+            rel.to_string()
+        } else {
+            format!("{}/{}", self.prefix, rel)
+        }
+    }
+
+    /// Indexed form of a path written relative to the index root.
+    fn code_path(&self, path: &str) -> Option<String> {
+        Some(self.to_indexed(&join_rel("", path)?))
+    }
+
+    /// Indexed form of a Markdown link target, relative to the document.
+    fn link_path(&self, doc_path: &str, target: &str) -> Option<String> {
+        let doc_rel = self.to_rel(doc_path)?;
+        let dir = doc_rel.rsplit_once('/').map_or("", |(d, _)| d);
+        Some(self.to_indexed(&join_rel(dir, target)?))
+    }
+
+    fn file(&self, indexed: Option<String>) -> Option<(String, NodeIndex)> {
+        let indexed = indexed?;
+        let node = *self.files.get(&indexed)?;
+        Some((indexed, node))
+    }
+
+    /// Symbols named `name` in one file. Impl blocks only count if nothing else
+    /// has the name.
+    fn named_in_file(&self, path: &str, name: &str) -> Vec<&SymbolRef> {
+        let all: Vec<_> = self
+            .file_symbols
+            .get(path)
+            .into_iter()
+            .flatten()
+            .filter(|s| s.name == name)
+            .collect();
+        prefer_definitions(all)
+    }
+
+    /// Members named `member` whose range lies inside a symbol named `owner` in
+    /// the same file, in `only` if given, else anywhere.
+    fn members(&self, only: Option<&str>, owner: &str, member: &str) -> Vec<NodeIndex> {
+        let Some(candidates) = self.by_name.get(member) else {
+            return Vec::new();
+        };
+        let owners = self.by_name.get(owner).map(Vec::as_slice).unwrap_or(&[]);
+        let mut found = Vec::new();
+        for (path, i) in candidates {
+            if only.is_some_and(|p| p != path) {
+                continue;
+            }
+            let c = &self.file_symbols[path][*i];
+            let inside = owners.iter().any(|(owner_path, j)| {
+                let o = &self.file_symbols[owner_path][*j];
+                owner_path == path
+                    && o.node != c.node
+                    && o.start_byte <= c.start_byte
+                    && c.end_byte <= o.end_byte
+            });
+            if inside && !found.contains(&c.node) {
+                found.push(c.node);
+            }
+        }
+        found
+    }
+}
+
+/// Keeps non-`impl` symbols if there are any (a struct and its impl block share a name).
+fn prefer_definitions(all: Vec<&SymbolRef>) -> Vec<&SymbolRef> {
+    if all.iter().any(|s| !s.is_impl) {
+        all.into_iter().filter(|s| !s.is_impl).collect()
+    } else {
+        all
+    }
+}
+
+/// `base` joined with `rel`, with `.` and `..` resolved lexically. `None` if the
+/// result leaves the root. A leading `/` in `rel` means root-relative.
+fn join_rel(base: &str, rel: &str) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+    let base = if rel.starts_with('/') { "" } else { base };
+    for part in base.split('/').chain(rel.split('/')) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            p => parts.push(p),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+fn one_or_ambiguous(nodes: Vec<NodeIndex>) -> Resolution {
+    match nodes.len() {
+        0 => Resolution::Unresolved,
+        1 => Resolution::Linked(nodes),
+        _ => Resolution::Ambiguous,
+    }
+}
+
+/// Resolves one mention. The mention's form selects the rule, so the first
+/// matching rule always decides:
+/// 1. Markdown link, 2. path, 3. `path::symbol` and `path:line`,
+/// 4. `Type::member`, 5. bare name.
+pub fn resolve_mention(mention: &Mention, doc_path: &str, tables: &ResolveTables) -> Resolution {
+    match (mention.kind, &mention.form) {
+        (MentionKind::MarkdownLink, MentionForm::Path(target)) => {
+            link_file(tables.file(tables.link_path(doc_path, target)))
+        }
+        (MentionKind::MarkdownLink, _) => Resolution::Unresolved,
+        (_, MentionForm::Path(path)) => link_file(tables.file(tables.code_path(path))),
+        (_, MentionForm::PathSymbol { path, symbol }) => {
+            let Some((file, _)) = tables.file(tables.code_path(path)) else {
+                return Resolution::Unresolved;
+            };
+            match symbol.rsplit_once("::") {
+                Some((owner, member)) => {
+                    let owner = owner.rsplit("::").next().unwrap_or(owner);
+                    one_or_ambiguous(tables.members(Some(&file), owner, member))
+                }
+                None => one_or_ambiguous(
+                    tables
+                        .named_in_file(&file, symbol)
+                        .iter()
+                        .map(|s| s.node)
+                        .collect(),
+                ),
+            }
+        }
+        (_, MentionForm::PathLine { path, line }) => {
+            let Some((file, file_node)) = tables.file(tables.code_path(path)) else {
+                return Resolution::Unresolved;
+            };
+            Resolution::Linked(vec![innermost(tables, &file, *line).unwrap_or(file_node)])
+        }
+        (_, MentionForm::TypeMember { owner, member }) => {
+            one_or_ambiguous(tables.members(None, owner, member))
+        }
+        (_, MentionForm::BareName(name)) => {
+            if name.chars().count() < BARE_NAME_MIN_LEN
+                || BARE_NAME_DENYLIST.contains(&name.as_str())
+            {
+                return Resolution::Unresolved;
+            }
+            let all: Vec<_> = tables
+                .by_name
+                .get(name)
+                .into_iter()
+                .flatten()
+                .map(|(path, i)| &tables.file_symbols[path][*i])
+                .collect();
+            one_or_ambiguous(prefer_definitions(all).iter().map(|s| s.node).collect())
+        }
+    }
+}
+
+fn link_file(file: Option<(String, NodeIndex)>) -> Resolution {
+    file.map_or(Resolution::Unresolved, |(_, node)| {
+        Resolution::Linked(vec![node])
+    })
+}
+
+/// The smallest symbol of `file` whose lines contain `line`.
+fn innermost(tables: &ResolveTables, file: &str, line: usize) -> Option<NodeIndex> {
+    let starts = tables.line_starts.get(file)?;
+    tables
+        .file_symbols
+        .get(file)?
+        .iter()
+        .filter(|s| {
+            let last = s.end_byte.saturating_sub(1).max(s.start_byte);
+            s.line <= line && line <= line_of(starts, last)
+        })
+        .min_by_key(|s| s.end_byte - s.start_byte)
+        .map(|s| s.node)
+}
+
+/// Whether an unlinked mention goes into the `status` counts. Bare names in
+/// fenced code that match nothing are not counted: fenced blocks are mostly
+/// shell, config and example identifiers, and counting them would bury the
+/// unresolved links and paths. An ambiguous fenced name is a real collision
+/// and still counts.
+pub fn counts_as_unmatched(mention: &Mention, resolution: &Resolution) -> bool {
+    match resolution {
+        Resolution::Linked(_) => false,
+        Resolution::Ambiguous => true,
+        Resolution::Unresolved => {
+            !(mention.kind == MentionKind::FencedCode
+                && matches!(mention.form, MentionForm::BareName(_)))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1808,5 +2165,480 @@ mod tests {
         );
         assert_eq!(find_key("/a/b: 1\n/a: 2\n", 0, "/a"), Some(8));
         assert_eq!(find_key("x: get\n", 0, "get"), None);
+    }
+
+    // ---- Link resolution (4.2, 4.3) ----
+
+    const FIXTURE_PREFIX: &str = "tests/fixtures/docs";
+    const LINKS_DOC: &str = "tests/fixtures/docs/docs/links.md";
+
+    /// Tables over the docs fixture, as the orchestrator would build them with the
+    /// relative root `tests/fixtures/docs`. Node `i` is described by `labels[i]`.
+    struct Fixture {
+        tables: ResolveTables,
+        labels: Vec<String>,
+    }
+
+    fn fixture_tables() -> Fixture {
+        use crate::core::parser::CodeParser;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURE_PREFIX);
+        let mut tables = ResolveTables::new(FIXTURE_PREFIX);
+        let mut labels = Vec::new();
+        let mut parser = CodeParser::new();
+        let files = [
+            "src/audit/log.rs",
+            "src/audit/retention.rs",
+            "src/billing/invoice.py",
+            "docs/guide.md",
+            "docs/links.md",
+        ];
+        for rel in files {
+            let indexed = format!("{FIXTURE_PREFIX}/{rel}");
+            let node = NodeIndex::new(labels.len());
+            labels.push(indexed.clone());
+            tables.add_file(&indexed, node);
+            if rel.ends_with(".md") {
+                continue;
+            }
+            let fs_path = root.join(rel);
+            tables.set_line_text(&indexed, &fs::read_to_string(&fs_path).unwrap());
+            for sym in parser.parse_file(&fs_path).unwrap().symbols {
+                let node = NodeIndex::new(labels.len());
+                labels.push(format!("{indexed}::{}", sym.name));
+                tables.add_symbol(
+                    &indexed,
+                    SymbolRef {
+                        node,
+                        name: sym.name,
+                        line: sym.line,
+                        start_byte: sym.start_byte,
+                        end_byte: sym.end_byte,
+                        is_impl: sym.kind == "impl",
+                    },
+                );
+            }
+        }
+        Fixture { tables, labels }
+    }
+
+    /// `linked:<label>`, `unresolved` or `ambiguous`.
+    fn outcome(fx: &Fixture, mention: &Mention) -> String {
+        match resolve_mention(mention, LINKS_DOC, &fx.tables) {
+            Resolution::Linked(nodes) => {
+                let names: Vec<_> = nodes
+                    .iter()
+                    .map(|n| fx.labels[n.index()].as_str())
+                    .collect();
+                format!("linked:{}", names.join(","))
+            }
+            Resolution::Unresolved => "unresolved".into(),
+            Resolution::Ambiguous => "ambiguous".into(),
+        }
+    }
+
+    fn resolve_all(fx: &Fixture) -> Vec<(MentionKind, MentionForm, String)> {
+        parse_markdown(LINKS_DOC, LINKS)
+            .mentions
+            .iter()
+            .map(|m| (m.kind, m.form.clone(), outcome(fx, m)))
+            .collect()
+    }
+
+    fn lookup(
+        all: &[(MentionKind, MentionForm, String)],
+        kind: MentionKind,
+        form: MentionForm,
+    ) -> &str {
+        &all.iter()
+            .find(|(k, f, _)| *k == kind && *f == form)
+            .unwrap_or_else(|| panic!("no mention {form:?}"))
+            .2
+    }
+
+    fn log_rs(sym: &str) -> String {
+        format!("linked:{FIXTURE_PREFIX}/src/audit/log.rs::{sym}")
+    }
+
+    #[test]
+    fn test_rule1_markdown_links_resolve_against_the_document_directory() {
+        use MentionKind::MarkdownLink as L;
+        let all = resolve_all(&fixture_tables());
+        let file = |rel: &str| format!("linked:{FIXTURE_PREFIX}/{rel}");
+        assert_eq!(
+            lookup(&all, L, path("../src/audit/log.rs")),
+            file("src/audit/log.rs")
+        );
+        assert_eq!(lookup(&all, L, path("guide.md")), file("docs/guide.md"));
+        // Missing target, and a link that climbs out of the index root.
+        assert_eq!(lookup(&all, L, path("../src/missing.rs")), "unresolved");
+        assert_eq!(
+            lookup(&all, L, path("../../../../Cargo.toml")),
+            "unresolved"
+        );
+    }
+
+    #[test]
+    fn test_rule2_paths_are_relative_to_the_index_root() {
+        use MentionKind::CodeSpan as C;
+        let all = resolve_all(&fixture_tables());
+        let file = |rel: &str| format!("linked:{FIXTURE_PREFIX}/{rel}");
+        assert_eq!(
+            lookup(&all, C, path("src/audit/log.rs")),
+            file("src/audit/log.rs")
+        );
+        assert_eq!(
+            lookup(&all, C, path("src/audit/retention.rs")),
+            file("src/audit/retention.rs")
+        );
+        // `./src/billing/invoice.py` is stored with the `./` stripped.
+        assert_eq!(
+            lookup(&all, C, path("src/billing/invoice.py")),
+            file("src/billing/invoice.py")
+        );
+        assert_eq!(lookup(&all, C, path("src/audit/nothing.rs")), "unresolved");
+    }
+
+    #[test]
+    fn test_rule3_path_symbol_and_path_line() {
+        use MentionKind::CodeSpan as C;
+        let all = resolve_all(&fixture_tables());
+        let sym = MentionForm::PathSymbol {
+            path: "src/audit/log.rs".into(),
+            symbol: "append".into(),
+        };
+        let line = |n| MentionForm::PathLine {
+            path: "src/audit/log.rs".into(),
+            line: n,
+        };
+        assert_eq!(lookup(&all, C, sym), log_rs("append"));
+        // Line 12 is inside `append` (and inside the impl block): the innermost wins.
+        assert_eq!(lookup(&all, C, line(12)), log_rs("append"));
+        // Line 1 is a doc comment outside any symbol: falls back to the file.
+        assert_eq!(
+            lookup(&all, C, line(1)),
+            format!("linked:{FIXTURE_PREFIX}/src/audit/log.rs")
+        );
+    }
+
+    #[test]
+    fn test_rule3_symbol_missing_or_repeated_in_the_file() {
+        let fx = fixture_tables();
+        let at = |symbol: &str| Mention {
+            kind: MentionKind::CodeSpan,
+            form: MentionForm::PathSymbol {
+                path: "src/audit/retention.rs".into(),
+                symbol: symbol.into(),
+            },
+            byte: 0,
+            section: None,
+        };
+        // `new` and `apply` each appear once in retention.rs.
+        assert!(outcome(&fx, &at("apply")).starts_with("linked:"));
+        assert_eq!(outcome(&fx, &at("nothing_here")), "unresolved");
+        // A `Type::method` symbol resolves through the type's range.
+        assert!(outcome(&fx, &at("RetentionPolicy::apply")).ends_with("::apply"));
+        // `RetentionPolicy` is a struct and an impl block: the struct is the definition.
+        assert!(outcome(&fx, &at("RetentionPolicy")).ends_with("::RetentionPolicy"));
+    }
+
+    #[test]
+    fn test_rule4_type_member() {
+        use MentionKind::CodeSpan as C;
+        let all = resolve_all(&fixture_tables());
+        // Linked through the impl block's byte range.
+        assert_eq!(
+            lookup(&all, C, member("AuditLog", "append")),
+            log_rs("append")
+        );
+        assert_eq!(lookup(&all, C, member("AuditLog", "new")), log_rs("new"));
+        // RetentionPolicy::apply exists in a Rust file and a Python file.
+        assert_eq!(
+            lookup(&all, C, member("RetentionPolicy", "apply")),
+            "ambiguous"
+        );
+    }
+
+    #[test]
+    fn test_rule4_owner_not_found_or_member_outside_it() {
+        let fx = fixture_tables();
+        let mention = |owner: &str, name: &str| Mention {
+            kind: MentionKind::CodeSpan,
+            form: member(owner, name),
+            byte: 0,
+            section: None,
+        };
+        assert_eq!(outcome(&fx, &mention("Nothing", "append")), "unresolved");
+        // `verify_chain` exists but is a free function, not inside AuditLog.
+        assert_eq!(
+            outcome(&fx, &mention("AuditLog", "verify_chain")),
+            "unresolved"
+        );
+    }
+
+    #[test]
+    fn test_rule5_bare_names() {
+        use MentionKind::CodeSpan as C;
+        let all = resolve_all(&fixture_tables());
+        assert_eq!(
+            lookup(&all, C, bare("rotate_segments")),
+            log_rs("rotate_segments")
+        );
+        assert_eq!(lookup(&all, C, bare("flush_buffer")), "ambiguous");
+        // Denylisted (`new`), under four characters (`run`) and absent names do not link.
+        assert_eq!(lookup(&all, C, bare("new")), "unresolved");
+        assert_eq!(lookup(&all, C, bare("run")), "unresolved");
+        assert_eq!(lookup(&all, C, bare("does_not_exist")), "unresolved");
+    }
+
+    #[test]
+    fn test_rule5_type_name_is_not_ambiguous_with_its_impl_block() {
+        let fx = fixture_tables();
+        let m = Mention {
+            kind: MentionKind::CodeSpan,
+            form: bare("AuditLog"),
+            byte: 0,
+            section: None,
+        };
+        assert_eq!(outcome(&fx, &m), log_rs("AuditLog"));
+    }
+
+    #[test]
+    fn test_rule5_short_and_denylisted_names_are_not_linked_even_if_unique() {
+        let mut tables = ResolveTables::new("");
+        tables.add_file("a.rs", NodeIndex::new(0));
+        for (i, name) in ["ab", "path", "unique_name"].into_iter().enumerate() {
+            tables.add_symbol(
+                "a.rs",
+                SymbolRef {
+                    node: NodeIndex::new(i + 1),
+                    name: name.into(),
+                    line: 1,
+                    start_byte: 0,
+                    end_byte: 1,
+                    is_impl: false,
+                },
+            );
+        }
+        let resolve = |name: &str| {
+            let m = Mention {
+                kind: MentionKind::CodeSpan,
+                form: bare(name),
+                byte: 0,
+                section: None,
+            };
+            resolve_mention(&m, "doc.md", &tables)
+        };
+        assert_eq!(resolve("ab"), Resolution::Unresolved);
+        assert_eq!(resolve("path"), Resolution::Unresolved);
+        assert_eq!(
+            resolve("unique_name"),
+            Resolution::Linked(vec![NodeIndex::new(3)])
+        );
+    }
+
+    #[test]
+    fn test_paths_resolve_without_a_root_prefix() {
+        let mut tables = ResolveTables::new("");
+        tables.add_file("docs/a.md", NodeIndex::new(0));
+        tables.add_file("src/x.rs", NodeIndex::new(1));
+        let link = |target: &str| {
+            let m = Mention {
+                kind: MentionKind::MarkdownLink,
+                form: path(target),
+                byte: 0,
+                section: None,
+            };
+            resolve_mention(&m, "docs/a.md", &tables)
+        };
+        assert_eq!(
+            link("../src/x.rs"),
+            Resolution::Linked(vec![NodeIndex::new(1)])
+        );
+        // One level too many leaves the root.
+        assert_eq!(link("../../src/x.rs"), Resolution::Unresolved);
+    }
+
+    #[test]
+    fn test_unmatched_counting_skips_unresolved_fenced_bare_names_only() {
+        use MentionKind::*;
+        let m = |kind, form| Mention {
+            kind,
+            form,
+            byte: 0,
+            section: None,
+        };
+        let (unresolved, ambiguous) = (Resolution::Unresolved, Resolution::Ambiguous);
+        let fenced_bare = m(FencedCode, bare("verify_chain"));
+        assert!(!counts_as_unmatched(&fenced_bare, &unresolved));
+        assert!(counts_as_unmatched(&fenced_bare, &ambiguous));
+        assert!(!counts_as_unmatched(
+            &fenced_bare,
+            &Resolution::Linked(vec![])
+        ));
+        // Every other unresolved mention still counts.
+        assert!(counts_as_unmatched(
+            &m(CodeSpan, bare("x_y_z")),
+            &unresolved
+        ));
+        assert!(counts_as_unmatched(
+            &m(FencedCode, path("src/none.rs")),
+            &unresolved
+        ));
+        assert!(counts_as_unmatched(
+            &m(FencedCode, member("A", "b")),
+            &unresolved
+        ));
+        assert!(counts_as_unmatched(
+            &m(MarkdownLink, path("gone.md")),
+            &unresolved
+        ));
+    }
+
+    #[test]
+    fn test_fixture_fenced_mentions_resolve() {
+        let fx = fixture_tables();
+        let all = resolve_all(&fx);
+        let fenced: Vec<_> = all
+            .iter()
+            .filter(|(k, ..)| *k == MentionKind::FencedCode)
+            .collect();
+        let by = |form: MentionForm| {
+            fenced
+                .iter()
+                .find(|(_, f, _)| *f == form)
+                .unwrap()
+                .2
+                .clone()
+        };
+        assert_eq!(by(member("AuditLog", "new")), log_rs("new"));
+        assert_eq!(by(bare("verify_chain")), log_rs("verify_chain"));
+    }
+
+    // ---- Term aggregation (4.5) ----
+
+    /// (term, count) kept for `docs/x.md`'s directory.
+    fn kept_terms(outline: &DocOutline) -> Vec<(String, u32)> {
+        aggregate_terms([("docs/x.md", outline)])
+            .remove("docs")
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| (t.term, t.count))
+            .collect()
+    }
+
+    fn doc_with_terms(text: &str) -> DocOutline {
+        parse_markdown("docs/x.md", text)
+    }
+
+    #[test]
+    fn test_terms_once_only_is_dropped_and_order_is_count_then_term() {
+        let text =
+            "# H\n\nWiden Beta, Zed Yak here.\n\nZed Yak again and Widen Beta once more.\n\n\
+                    Zed Yak a third time. Solo Term once.\n";
+        let outline = doc_with_terms(text);
+        assert_eq!(
+            kept_terms(&outline),
+            [("Zed Yak".to_string(), 3), ("Widen Beta".to_string(), 2)]
+        );
+    }
+
+    #[test]
+    fn test_terms_tie_is_broken_by_term_ascending() {
+        let outline = doc_with_terms(
+            "# H\n\nBeta Two, Alpha One.\n\nBeta Two. Alpha One. Gamma Six, Gamma Six.\n",
+        );
+        assert_eq!(
+            kept_terms(&outline),
+            [("Alpha One", 2), ("Beta Two", 2), ("Gamma Six", 2)].map(|(t, c)| (t.to_string(), c))
+        );
+    }
+
+    #[test]
+    fn test_terms_cap_of_fifty_per_directory_keeps_the_top_ranked() {
+        // 60 distinct two-word terms; term i occurs 2 + i % 3 times, one paragraph each.
+        let term = |i: usize| {
+            format!(
+                "K{} M{}",
+                (b'a' + (i % 26) as u8) as char,
+                (b'a' + (i / 26) as u8) as char
+            )
+        };
+        let mut text = String::from("# H\n\n");
+        for i in 0..60 {
+            for _ in 0..2 + i % 3 {
+                text.push_str(&format!("{} here.\n\n", term(i)));
+            }
+        }
+        let outline = doc_with_terms(&text);
+        let got = kept_terms(&outline);
+        assert_eq!(got.len(), 50);
+
+        let mut expected: Vec<(String, u32)> =
+            (0..60).map(|i| (term(i), 2 + (i % 3) as u32)).collect();
+        expected.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        expected.truncate(50);
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn test_terms_keep_at_most_five_distinct_sections_in_path_then_byte_order() {
+        let mut a = String::new();
+        for n in 0..8 {
+            a.push_str(&format!(
+                "## S{n}\n\nCasting Director here.\n\nCasting Director again.\n\n"
+            ));
+        }
+        let first = parse_markdown("docs/b.md", &a);
+        let second = parse_markdown("docs/a.md", "# Only\n\nCasting Director too.\n");
+        // Input order must not matter: a.md sorts before b.md.
+        let forward = aggregate_terms([("docs/b.md", &first), ("docs/a.md", &second)]);
+        let backward = aggregate_terms([("docs/a.md", &second), ("docs/b.md", &first)]);
+        assert_eq!(forward, backward);
+        let term = &forward["docs"][0];
+        assert_eq!((term.term.as_str(), term.count), ("Casting Director", 17));
+        let sections: Vec<_> = term
+            .sections
+            .iter()
+            .map(|(p, a)| (p.as_str(), a.as_str()))
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                ("docs/a.md", "only"),
+                ("docs/b.md", "s0"),
+                ("docs/b.md", "s1"),
+                ("docs/b.md", "s2"),
+                ("docs/b.md", "s3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_terms_are_grouped_by_parent_directory() {
+        let a = doc_with_terms("# H\n\nCasting Director, Casting Director.\n");
+        let by_dir = aggregate_terms([("docs/x.md", &a), ("other/y.md", &a), ("top.md", &a)]);
+        assert_eq!(
+            by_dir.keys().map(String::as_str).collect::<Vec<_>>(),
+            [".", "docs", "other"]
+        );
+        // A term before the first heading has the empty anchor.
+        let pre = parse_markdown("pre.md", "Casting Director and Casting Director.\n");
+        let by_dir = aggregate_terms([("pre.md", &pre)]);
+        assert_eq!(
+            by_dir["."][0].sections,
+            [("pre.md".to_string(), String::new())]
+        );
+    }
+
+    #[test]
+    fn test_terms_fixture_guide() {
+        let outline = parse_markdown("docs/guide.md", GUIDE);
+        let got = kept_terms(&outline);
+        let count = |t: &str| got.iter().find(|(n, _)| n == t).map(|(_, c)| *c);
+        assert!(count("Casting Director").unwrap_or(0) >= 2);
+        assert!(count("Compliance Officer").unwrap_or(0) >= 2);
+        // Once only, and the 6-word run, are not kept.
+        assert_eq!(count("Release Manager"), None);
+        assert_eq!(count("This Week"), None);
     }
 }

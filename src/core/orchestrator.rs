@@ -1,10 +1,12 @@
+use crate::core::docs::{self, DocOutline, Resolution, ResolveTables, SymbolRef};
 use crate::core::graph::{EdgeType, IndexMeta, NodeData, NodeType, ProjectGraph, SCHEMA_VERSION};
 use crate::core::parser::CodeParser;
 use crate::core::utils::{normalize_rel_path, path_to_fqn, resolve_import_path};
 use crate::error::Result;
 use ignore::WalkBuilder;
-use std::collections::HashMap;
-use std::path::Path;
+use petgraph::graph::NodeIndex;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink as sys_symlink;
@@ -31,6 +33,31 @@ fn sys_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io:
     } else {
         std::os::windows::fs::symlink_file(original, link)
     }
+}
+
+/// A file the doc pass reads after the code pass has created its file node.
+struct DocInput {
+    norm_path: String,
+    fs_path: PathBuf,
+    file_node: NodeIndex,
+    is_markdown: bool,
+}
+
+/// A parsed Markdown file with the graph nodes of its sections.
+struct ParsedDoc {
+    norm_path: String,
+    file_node: NodeIndex,
+    outline: DocOutline,
+    /// Parallel to `outline.sections`.
+    section_nodes: Vec<NodeIndex>,
+}
+
+/// What the link pass added and could not link.
+#[derive(Default)]
+struct LinkStats {
+    references: usize,
+    unresolved: usize,
+    ambiguous: usize,
 }
 
 pub struct Orchestrator {
@@ -67,6 +94,8 @@ impl Orchestrator {
         let mut outlines = Vec::new();
         let mut fqn_to_node = HashMap::new();
         let mut path_to_node = HashMap::new();
+        let mut doc_inputs = Vec::new();
+        let mut fs_paths: HashMap<String, PathBuf> = HashMap::new();
 
         // Pass 1: Parse all files and create nodes
         // WalkBuilder respects .gitignore inside root; allow hidden files so .env* is indexed
@@ -145,6 +174,16 @@ impl Orchestrator {
                             fqn_to_node.insert(fqn, file_node);
                             path_to_node.insert(norm_path.clone(), file_node);
                             path_to_node.insert(outline.path.clone(), file_node);
+                            fs_paths.insert(norm_path.clone(), path.to_path_buf());
+
+                            if extension == "md" || matches!(extension, "json" | "yaml" | "yml") {
+                                doc_inputs.push(DocInput {
+                                    norm_path: norm_path.clone(),
+                                    fs_path: path.to_path_buf(),
+                                    file_node,
+                                    is_markdown: extension == "md",
+                                });
+                            }
 
                             for symbol in &outline.symbols {
                                 let node_type = match symbol.kind.as_str() {
@@ -233,6 +272,15 @@ impl Orchestrator {
             }
         }
 
+        // Pass 3: documentation and API nodes. Needs the finished code symbol table.
+        let parsed_docs = self.doc_pass(doc_inputs);
+        let stats = self.link_pass(root, &parsed_docs, &fs_paths);
+        self.graph.doc_terms = docs::aggregate_terms(
+            parsed_docs
+                .iter()
+                .map(|d| (d.norm_path.as_str(), &d.outline)),
+        );
+
         let canonical_root = root
             .canonicalize()
             .map(|p| p.to_string_lossy().to_string())
@@ -252,6 +300,13 @@ impl Orchestrator {
             .filter(|n| n.node_type != NodeType::File && !n.node_type.is_doc())
             .count();
         let edge_count = self.graph.graph.edge_count();
+        let count_of = |ty: NodeType| {
+            self.graph
+                .graph
+                .node_weights()
+                .filter(|n| n.node_type == ty)
+                .count()
+        };
 
         self.graph.meta = Some(IndexMeta {
             schema_version: SCHEMA_VERSION,
@@ -262,10 +317,193 @@ impl Orchestrator {
             file_count,
             symbol_count,
             edge_count,
-            ..Default::default()
+            doc_file_count: parsed_docs.len(),
+            section_count: count_of(NodeType::DocSection),
+            reference_count: stats.references,
+            unresolved_mention_count: stats.unresolved,
+            ambiguous_mention_count: stats.ambiguous,
+            api_operation_count: count_of(NodeType::ApiOperation),
         });
 
         Ok(())
+    }
+
+    /// Adds `DocSection`, `ApiOperation` and `ApiSchema` nodes and the `DocMeta`
+    /// side table. Section text is never stored, only byte ranges.
+    fn doc_pass(&mut self, inputs: Vec<DocInput>) -> Vec<ParsedDoc> {
+        let mut parsed = Vec::new();
+        for input in inputs {
+            let Ok(text) = std::fs::read_to_string(&input.fs_path) else {
+                continue;
+            };
+            if input.is_markdown {
+                parsed.push(self.add_markdown(input, &text));
+            } else if docs::is_openapi(
+                &input.fs_path,
+                &text.as_bytes()[..text.len().min(docs::OPENAPI_HEAD_LEN)],
+                text.len() as u64,
+            ) {
+                self.add_api(&input, &text);
+            }
+        }
+        parsed
+    }
+
+    /// Resolves every collected mention and adds a `References` edge from its
+    /// deepest section (or the file, before the first heading) to each target.
+    /// Identical edges are added once.
+    fn link_pass(
+        &mut self,
+        root: &Path,
+        parsed: &[ParsedDoc],
+        fs_paths: &HashMap<String, PathBuf>,
+    ) -> LinkStats {
+        let mut stats = LinkStats::default();
+        if parsed.is_empty() {
+            return stats;
+        }
+
+        // A relative root stays in indexed paths as a prefix.
+        let prefix = if root.is_absolute() {
+            String::new()
+        } else {
+            match normalize_rel_path(Path::new("."), &root.to_string_lossy()).as_str() {
+                "." => String::new(),
+                p => p.trim_end_matches('/').to_string(),
+            }
+        };
+        let mut tables = ResolveTables::new(&prefix);
+        for idx in self.graph.graph.node_indices() {
+            let node = &self.graph.graph[idx];
+            match node.node_type {
+                NodeType::File => tables.add_file(&node.path, idx),
+                NodeType::Symbol => tables.add_symbol(
+                    &node.path,
+                    SymbolRef {
+                        node: idx,
+                        name: node.name.clone(),
+                        line: node.line,
+                        start_byte: node.start_byte,
+                        end_byte: node.end_byte,
+                        is_impl: node.kind == "impl",
+                    },
+                ),
+                _ => {}
+            }
+        }
+
+        // `path:line` mentions need the target's line starts; read each file once.
+        let mut loaded = HashSet::new();
+        for doc in parsed {
+            for mention in &doc.outline.mentions {
+                let Some(file) = tables.line_file(&mention.form).map(str::to_string) else {
+                    continue;
+                };
+                if loaded.insert(file.clone()) {
+                    if let Some(text) = fs_paths
+                        .get(&file)
+                        .and_then(|p| std::fs::read_to_string(p).ok())
+                    {
+                        tables.set_line_text(&file, &text);
+                    }
+                }
+            }
+        }
+
+        let mut edges = HashSet::new();
+        for doc in parsed {
+            for mention in &doc.outline.mentions {
+                let from = mention
+                    .section
+                    .map_or(doc.file_node, |i| doc.section_nodes[i]);
+                let resolution = docs::resolve_mention(mention, &doc.norm_path, &tables);
+                if let Resolution::Linked(targets) = &resolution {
+                    for &to in targets {
+                        if edges.insert((from, to)) {
+                            self.graph.add_edge(from, to, EdgeType::References);
+                            stats.references += 1;
+                        }
+                    }
+                } else if docs::counts_as_unmatched(mention, &resolution) {
+                    match resolution {
+                        Resolution::Ambiguous => stats.ambiguous += 1,
+                        _ => stats.unresolved += 1,
+                    }
+                }
+            }
+        }
+        stats
+    }
+
+    fn add_markdown(&mut self, input: DocInput, text: &str) -> ParsedDoc {
+        let outline = docs::parse_markdown(&input.norm_path, text);
+        let mut section_nodes: Vec<NodeIndex> = Vec::with_capacity(outline.sections.len());
+        for section in &outline.sections {
+            let node = self.graph.add_node(NodeData {
+                path: input.norm_path.clone(),
+                name: section.name.clone(),
+                kind: section.kind().to_string(),
+                line: section.line,
+                start_byte: section.start_byte,
+                end_byte: section.end_byte,
+                node_type: NodeType::DocSection,
+                docstring: None,
+                role: Some(section.anchor.clone()),
+            });
+            // Parents precede children in document order.
+            let parent = section.parent.map_or(input.file_node, |p| section_nodes[p]);
+            self.graph.add_edge(parent, node, EdgeType::Contains);
+            section_nodes.push(node);
+        }
+        if let Some(meta) = &outline.meta {
+            self.graph
+                .doc_meta
+                .insert(input.norm_path.clone(), meta.clone());
+        }
+        ParsedDoc {
+            norm_path: input.norm_path,
+            file_node: input.file_node,
+            outline,
+            section_nodes,
+        }
+    }
+
+    /// Operation nodes: name `METHOD /path`, kind the lower-case method,
+    /// role the operationId, docstring the summary. Schema nodes: kind `schema`.
+    fn add_api(&mut self, input: &DocInput, text: &str) {
+        let Some(api) = docs::parse_openapi_text(&input.fs_path, text) else {
+            return;
+        };
+        for op in &api.operations {
+            let node = self.graph.add_node(NodeData {
+                path: input.norm_path.clone(),
+                name: op.name(),
+                kind: op.method.to_ascii_lowercase(),
+                line: op.location.line,
+                start_byte: op.location.start_byte,
+                end_byte: op.location.end_byte,
+                node_type: NodeType::ApiOperation,
+                docstring: op.summary.clone(),
+                role: op.operation_id.clone(),
+            });
+            self.graph
+                .add_edge(input.file_node, node, EdgeType::Contains);
+        }
+        for schema in &api.schemas {
+            let node = self.graph.add_node(NodeData {
+                path: input.norm_path.clone(),
+                name: schema.name.clone(),
+                kind: "schema".to_string(),
+                line: schema.location.line,
+                start_byte: schema.location.start_byte,
+                end_byte: schema.location.end_byte,
+                node_type: NodeType::ApiSchema,
+                docstring: None,
+                role: None,
+            });
+            self.graph
+                .add_edge(input.file_node, node, EdgeType::Contains);
+        }
     }
 
     pub fn is_effectively_empty(&self, root: &Path, out_dir: &Path) -> bool {
